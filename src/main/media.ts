@@ -11,9 +11,10 @@ export function runCommand(
   command: string,
   args: string[],
   onText?: (chunk: string) => void,
+  cwd?: string,
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true });
+    const child = spawn(command, args, { windowsHide: true, cwd });
     let stdout = "";
     let stderr = "";
     child.stdout.setEncoding("utf8");

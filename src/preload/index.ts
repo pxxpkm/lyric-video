@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld("lyric", {
   createTestClip: () => ipcRenderer.invoke("preview:test-clip"),
   loadProject: (projectPath: string) => ipcRenderer.invoke("preview:load", projectPath),
   saveTiming: (projectPath: string, timing: unknown) => ipcRenderer.invoke("preview:save", projectPath, timing),
+  exportVideo: (request: unknown) => ipcRenderer.invoke("export:video", request),
+  onExportProgress: (callback: (text: string) => void) => {
+    const listener = (_event: unknown, text: string) => callback(text);
+    ipcRenderer.on("export:progress", listener);
+    return () => ipcRenderer.removeListener("export:progress", listener);
+  },
   onProgress: (callback: (text: string) => void) => {
     const listener = (_event: unknown, text: string) => callback(text);
     ipcRenderer.on("import:progress", listener);

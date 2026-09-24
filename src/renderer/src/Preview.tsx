@@ -17,6 +17,8 @@ export function Preview({ session, onBack }: { session: PreviewSession; onBack: 
   const timingRef = useRef(timing);
   const [debug, setDebug] = useState(true);
   const [playing, setPlaying] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportText, setExportText] = useState("");
   const [pos, setPos] = useState(0);
   const [duration, setDuration] = useState(session.durationMs / 1000);
   const src = mediaSrc(session.mediaPath);
@@ -27,6 +29,8 @@ export function Preview({ session, onBack }: { session: PreviewSession; onBack: 
     debugRef.current = debug;
     timingRef.current = timing;
   }, [session, debug, timing]);
+
+  useEffect(() => window.lyric.onExportProgress(setExportText), []);
 
   useEffect(() => {
     if (!session.projectPath) return;
@@ -63,6 +67,26 @@ export function Preview({ session, onBack }: { session: PreviewSession; onBack: 
     const lyric = Math.max(0, timeOfMs(line, timing.lines) - 2_000);
     media.currentTime = mediaMsForLyric(lyric, timing.offsetMs, timing.rate) / 1000;
     void media.play();
+  }
+
+  async function exportVideo() {
+    setExporting(true);
+    setExportText("正在寫字幕");
+    try {
+      const result = await window.lyric.exportVideo({
+        projectPath: session.projectPath,
+        mediaPath: session.mediaPath,
+        mode: session.mode,
+        durationMs: session.durationMs,
+        lines: session.lines,
+        timing: timingForProject(timing),
+      });
+      setExportText(result.ok ? result.outPath : result.error);
+    } catch {
+      setExportText("匯出失敗");
+    } finally {
+      setExporting(false);
+    }
   }
 
   function toggle() {
@@ -150,9 +174,10 @@ export function Preview({ session, onBack }: { session: PreviewSession; onBack: 
           />
           時間讀數
         </label>
-        <button type="button" disabled title="這一步還不能匯出">
-          匯出 MP4
+        <button type="button" disabled={!hasLyrics || exporting || !session.mediaPath} onClick={() => void exportVideo()}>
+          {exporting ? "正在匯出" : "匯出 MP4"}
         </button>
+        {exportText ? <p className="meta">{exportText}</p> : null}
       </div>
     </main>
   );

@@ -12,6 +12,15 @@ export type LyricBridge = {
   createTestClip: () => Promise<PreviewSession>;
   loadProject: (projectPath: string) => Promise<PreviewSession>;
   saveTiming: (projectPath: string, timing: PreviewSession["timing"]) => Promise<boolean>;
+  exportVideo: (request: {
+    projectPath: string;
+    mediaPath: string;
+    mode: PreviewSession["mode"];
+    durationMs: number;
+    lines: PreviewSession["lines"];
+    timing: PreviewSession["timing"];
+  }) => Promise<{ ok: true; outPath: string; assPath: string } | { ok: false; error: string }>;
+  onExportProgress: (callback: (text: string) => void) => () => void;
   onProgress: (callback: (text: string) => void) => () => void;
 };
 

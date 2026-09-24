@@ -1,4 +1,6 @@
-import { ipcMain, type IpcMainInvokeEvent } from "electron";
+import { ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { join } from "node:path";
+import { exportProject, type ExportRequest } from "./exportVideo";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { IMPORT_FAIL } from "./media";
 import { createTestClip, loadPreview, savePreviewTiming } from "./testClip";
@@ -32,6 +34,23 @@ function request(value: unknown): SaveRequest | null {
   };
 }
 
+function exportRequest(value: unknown): ExportRequest | null {
+  const row = value != null && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  if (!row) return null;
+  if (typeof row.projectPath !== "string" || typeof row.mediaPath !== "string") return null;
+  if (row.mode !== "video" && row.mode !== "audio") return null;
+  if (!Array.isArray(row.lines) || row.timing == null || typeof row.timing !== "object") return null;
+  const durationMs = typeof row.durationMs === "number" && Number.isFinite(row.durationMs) ? row.durationMs : 0;
+  return {
+    projectPath: row.projectPath,
+    mediaPath: row.mediaPath,
+    mode: row.mode,
+    durationMs,
+    lines: row.lines as ExportRequest["lines"],
+    timing: row.timing as ExportRequest["timing"],
+  };
+}
+
 export function registerImportIpc(): void {
   ipcMain.handle("import:probe-url", async (_event, url: unknown, current: unknown) => {
     if (typeof url !== "string") return { ok: false, error: IMPORT_FAIL };
@@ -60,6 +79,21 @@ export function registerImportIpc(): void {
     if (typeof projectPath !== "string") throw new Error("沒有專案");
     return loadPreview(projectPath);
   });
+  ipcMain.handle("export:video", async (event: IpcMainInvokeEvent, body: unknown) => {
+    const request = exportRequest(body);
+    if (!request) return { ok: false, error: "沒有可匯出的歌詞" };
+    if (request.lines.length === 0) return { ok: false, error: "沒有可匯出的歌詞" };
+    let last = 0;
+    const result = await exportProject(request, join(process.cwd(), "fonts"), (text) => {
+      const now = Date.now();
+      if (now - last < 200 && !text.startsWith("匯出")) return;
+      last = now;
+      event.sender.send("export:progress", text);
+    });
+    if (result.ok) await shell.openPath(result.outPath);
+    return result;
+  });
+
   ipcMain.handle("preview:save", async (_event, projectPath: unknown, timing: unknown) => {
     if (typeof projectPath !== "string" || timing == null || typeof timing !== "object") return false;
     await savePreviewTiming(projectPath, timingFromProject(timing as StoredTiming));
