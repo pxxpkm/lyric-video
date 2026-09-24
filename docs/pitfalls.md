@@ -6,6 +6,20 @@
 
 ## 本專案已遇到
 
+### 2026-09-24 `npm install` 之後 Electron 本體不在
+
+- 現象：`npm run dev` 報 `Error: Electron uninstall`。`node_modules/electron` 有套件，沒有 `path.txt` 和 `dist/electron.exe`。
+- 原因：二進位要由套件裡的 `install.js` 另外下載。這次 `npm install` 沒有把它留下。
+- 對策：在專案目錄執行 `node node_modules/electron/install.js`。不要改 npm 的 `ignore-scripts`。
+- 影響：M0 開視窗。
+
+### 2026-09-24 electron-vite 5 不能配最新的 Vite 8
+
+- 現象：一次安裝 `electron-vite` 和 `@vitejs/plugin-react` 時，npm 報 ERESOLVE。`@vitejs/plugin-react` 6 要 Vite 8，`electron-vite` 5 只接受 Vite 5 到 7。
+- 原因：兩個套件的 peer 範圍沒有交集。
+- 對策：鎖 `electron-vite@5`、`vite@7`、`@vitejs/plugin-react@5`、`vitest@3`。不要為了過安裝加 `--force`。
+- 影響：M0 的依賴。以後升級 electron-vite 再一起看 Vite。
+
 ### 2026-09-24 這部電腦沒有設定 git 作者
 
 - 現象：`git config user.name` 和 `user.email` 都是空的。直接 commit 會停下來問你是誰。
