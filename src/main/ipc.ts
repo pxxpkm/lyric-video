@@ -1,6 +1,7 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { IMPORT_FAIL } from "./media";
+import { createTestClip } from "./testClip";
 import type { SaveRequest } from "../shared/import";
 
 function fields(value: unknown): { lockTitle: boolean; lockArtist: boolean; title: string; artist: string } {
@@ -51,6 +52,8 @@ export function registerImportIpc(): void {
       event.sender.send("import:progress", `正在下載 ${Math.floor(percent)}%`);
     });
   });
+
+  ipcMain.handle("preview:test-clip", () => createTestClip());
 
   ipcMain.handle("import:save-file", async (_event, filePath: unknown, body: unknown) => {
     const parsed = request(body);

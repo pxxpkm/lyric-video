@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ImportDraft, SaveRequest } from "../../shared/import";
+import type { PreviewSession } from "../../shared/preview";
+import { Preview } from "./Preview";
 
 type Source = { kind: "youtube"; url: string } | { kind: "file"; path: string } | null;
 
@@ -24,6 +26,9 @@ export function App() {
   const [error, setError] = useState("");
   const [savedPath, setSavedPath] = useState("");
   const [busy, setBusy] = useState(false);
+  const [screen, setScreen] = useState<"import" | "preview">("import");
+  const [session, setSession] = useState<PreviewSession | null>(null);
+  const [savedPreview, setSavedPreview] = useState<PreviewSession | null>(null);
 
   useEffect(() => {
     if (!window.lyric) {
@@ -121,12 +126,37 @@ export function App() {
         return;
       }
       setSavedPath(result.projectPath);
+      setSavedPreview({
+        title,
+        artist,
+        mediaPath: result.mediaPath,
+        mode,
+        durationMs: draft?.durationMs ?? 0,
+        lines: [],
+      });
       setStatus("已建立專案，尚未匯出");
     } catch {
       setError("下載失敗，請改拖本機檔。");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function openTestClip() {
+    setBusy(true);
+    setError("");
+    try {
+      setSession(await window.lyric.createTestClip());
+      setScreen("preview");
+    } catch {
+      setError("測試片沒有建立。");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (screen === "preview" && session) {
+    return <Preview session={session} onBack={() => setScreen("import")} />;
   }
 
   return (
@@ -188,6 +218,20 @@ export function App() {
         </label>
         <button type="button" disabled={busy || !source} onClick={() => void save()}>
           {source?.kind === "youtube" ? "下載並建立專案" : "建立專案"}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !savedPreview}
+          onClick={() => {
+            if (!savedPreview) return;
+            setSession(savedPreview);
+            setScreen("preview");
+          }}
+        >
+          預覽這個檔
+        </button>
+        <button type="button" disabled={busy} onClick={() => void openTestClip()}>
+          打開測試片
         </button>
         {error ? <p className="error">{error}</p> : null}
         {savedPath ? <p className="meta">專案：{savedPath}</p> : null}

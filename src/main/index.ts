@@ -1,6 +1,7 @@
-import { app, BrowserWindow } from "electron";
-import { readFileSync } from "node:fs";
+import { app, BrowserWindow, net, protocol } from "electron";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { installDict } from "../core/s2t";
 import { registerImportIpc } from "./ipc";
 import { ensureLogDir } from "./log";
@@ -39,9 +40,21 @@ function createWindow(): void {
   }
 }
 
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "media",
+    privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
+  },
+]);
+
 registerImportIpc();
 
 app.whenReady().then(async () => {
+  protocol.handle("media", (request) => {
+    const filePath = decodeURIComponent(new URL(request.url).searchParams.get("path") ?? "");
+    if (!filePath || !existsSync(filePath)) return new Response("找不到檔案", { status: 404 });
+    return net.fetch(pathToFileURL(filePath).href);
+  });
   try {
     loadDict();
   } catch (error) {
