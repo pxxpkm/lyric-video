@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("lyric", {
   downloadUrl: (url: string, request: unknown) => ipcRenderer.invoke("import:download-url", url, request),
   saveFile: (filePath: string, request: unknown) => ipcRenderer.invoke("import:save-file", filePath, request),
   createTestClip: () => ipcRenderer.invoke("preview:test-clip"),
+  loadProject: (projectPath: string) => ipcRenderer.invoke("preview:load", projectPath),
+  saveTiming: (projectPath: string, timing: unknown) => ipcRenderer.invoke("preview:save", projectPath, timing),
   onProgress: (callback: (text: string) => void) => {
     const listener = (_event: unknown, text: string) => callback(text);
     ipcRenderer.on("import:progress", listener);

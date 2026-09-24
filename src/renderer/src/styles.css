@@ -25,6 +25,17 @@ h1 {
   font-weight: 650;
 }
 
+.topbar {
+  width: min(640px, 100%);
+  display: grid;
+  grid-template-columns: 34px 1fr 34px;
+  align-items: center;
+}
+
+.topbar h1 {
+  text-align: center;
+}
+
 .status {
   margin: 0 0 8px;
   color: #b7c0cc;
@@ -146,4 +157,76 @@ button:disabled {
 .seek {
   flex: 1;
   accent-color: #f0d78c;
+}
+
+.timing {
+  display: grid;
+  gap: 8px;
+}
+
+.lines {
+  height: 220px;
+  overflow: auto;
+  border: 1px solid #2c3340;
+  border-radius: 8px;
+}
+
+.pick-row {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 48px;
+  margin: 0;
+  padding: 4px 8px;
+  display: grid;
+  align-content: center;
+  text-align: left;
+  background: transparent;
+  color: #f3f5f8;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.pick-row.selected {
+  background: #3300d4ff;
+  border-color: #7000d4ff;
+}
+
+.pick-row .trans {
+  color: #80c8e8;
+  font-size: 0.82rem;
+}
+
+.meta.read {
+  min-width: 4.5rem;
+  text-align: center;
+}
+
+.line-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.tiny {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+}
+
+.icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+textarea {
+  font: inherit;
+  color: inherit;
+  background: #1c2028;
+  border: 1px solid #2c3340;
+  border-radius: 8px;
+  padding: 8px 10px;
+  resize: vertical;
 }

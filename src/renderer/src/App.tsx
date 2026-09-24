@@ -130,9 +130,11 @@ export function App() {
         title,
         artist,
         mediaPath: result.mediaPath,
+        projectPath: result.projectPath,
         mode,
         durationMs: draft?.durationMs ?? 0,
         lines: [],
+        timing: { offsetMs: 0, rate: 1, lines: {}, holds: {}, texts: {}, trans: {}, added: [] },
       });
       setStatus("已建立專案，尚未匯出");
     } catch {
@@ -223,9 +225,11 @@ export function App() {
           type="button"
           disabled={busy || !savedPreview}
           onClick={() => {
-            if (!savedPreview) return;
-            setSession(savedPreview);
-            setScreen("preview");
+            if (!savedPath) return;
+            void window.lyric.loadProject(savedPath).then((loaded) => {
+              setSession(loaded);
+              setScreen("preview");
+            });
           }}
         >
           預覽這個檔

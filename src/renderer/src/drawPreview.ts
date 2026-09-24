@@ -1,5 +1,6 @@
-import { previewFrame, type PreviewFrame } from "../../core/preview";
-import { lyricLine, type LyricLine } from "../../core/lyrics";
+import { lyricClockMs, mediaMsForLyric, previewFrame, type PreviewFrame } from "../../core/preview";
+import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
+import { defaultTiming, type TrackTiming } from "../../core/timing";
 import type { PreviewLine } from "../../shared/preview";
 
 export function sessionLines(lines: PreviewLine[]): LyricLine[] {
@@ -14,20 +15,24 @@ export function sessionLines(lines: PreviewLine[]): LyricLine[] {
 export function drawPreview(
   canvas: HTMLCanvasElement,
   lines: LyricLine[],
-  posMs: number,
+  mediaMs: number,
   mode: "video" | "audio",
   debug: boolean,
+  timing: TrackTiming = defaultTiming(),
 ): PreviewFrame {
+  const lyricMs = lyricClockMs(mediaMs, timing.offsetMs, timing.rate);
+  const shown = applyEdits(lines, timing);
+  const frame = previewFrame(shown, lyricMs, timing);
   const ratio = window.devicePixelRatio || 1;
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
-  if (width < 2 || height < 2) return previewFrame(lines, posMs);
+  if (width < 2 || height < 2) return frame;
   if (canvas.width !== Math.floor(width * ratio) || canvas.height !== Math.floor(height * ratio)) {
     canvas.width = Math.floor(width * ratio);
     canvas.height = Math.floor(height * ratio);
   }
   const ctx = canvas.getContext("2d");
-  if (!ctx) return previewFrame(lines, posMs);
+  if (!ctx) return frame;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, width, height);
   if (mode === "audio") {
@@ -35,7 +40,6 @@ export function drawPreview(
     ctx.fillRect(0, 0, width, height);
   }
 
-  const frame = previewFrame(lines, posMs);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const center = width / 2;
@@ -44,7 +48,7 @@ export function drawPreview(
     ctx.font = "32px 'Microsoft JhengHei', 'Segoe UI', sans-serif";
     ctx.fillText("尚未有歌詞", center, height * 0.62);
   } else {
-    const line = lines[frame.index];
+    const line = shown[frame.index];
     drawCurrent(ctx, line?.words ?? null, frame, center, height * 0.62);
     if (frame.trans) {
       ctx.fillStyle = "#c5d0dc";
@@ -62,11 +66,13 @@ export function drawPreview(
     ctx.textAlign = "left";
     ctx.font = "14px Consolas, 'Segoe UI', sans-serif";
     ctx.fillStyle = "rgba(8, 10, 14, 0.55)";
-    ctx.fillRect(12, 12, 280, 62);
+    ctx.fillRect(12, 12, 340, 96);
     ctx.fillStyle = "#f3f5f8";
-    ctx.fillText(`${Math.round(posMs)} ms`, 20, 28);
-    ctx.fillText(frame.key || "—", 20, 48);
-    ctx.fillText(`字 ${frame.wordIndex}`, 20, 66);
+    ctx.fillText(`播放 ${Math.round(mediaMs)} ms`, 20, 28);
+    ctx.fillText(`歌詞 ${Math.round(lyricMs)} ms`, 20, 46);
+    ctx.fillText(`句 ${Math.round(mediaMsForLyric(frame.atMs, timing.offsetMs, timing.rate))} ms`, 20, 64);
+    ctx.fillText(frame.key || "—", 20, 82);
+    ctx.fillText(`字 ${frame.wordIndex}`, 220, 82);
   }
   return frame;
 }

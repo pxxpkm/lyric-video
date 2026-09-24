@@ -1,7 +1,9 @@
 import { ipcMain, type IpcMainInvokeEvent } from "electron";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { IMPORT_FAIL } from "./media";
-import { createTestClip } from "./testClip";
+import { createTestClip, loadPreview, savePreviewTiming } from "./testClip";
+import { timingFromProject } from "../core/projectTiming";
+import type { StoredTiming } from "../shared/preview";
 import type { SaveRequest } from "../shared/import";
 
 function fields(value: unknown): { lockTitle: boolean; lockArtist: boolean; title: string; artist: string } {
@@ -54,6 +56,15 @@ export function registerImportIpc(): void {
   });
 
   ipcMain.handle("preview:test-clip", () => createTestClip());
+  ipcMain.handle("preview:load", (_event, projectPath: unknown) => {
+    if (typeof projectPath !== "string") throw new Error("沒有專案");
+    return loadPreview(projectPath);
+  });
+  ipcMain.handle("preview:save", async (_event, projectPath: unknown, timing: unknown) => {
+    if (typeof projectPath !== "string" || timing == null || typeof timing !== "object") return false;
+    await savePreviewTiming(projectPath, timingFromProject(timing as StoredTiming));
+    return true;
+  });
 
   ipcMain.handle("import:save-file", async (_event, filePath: unknown, body: unknown) => {
     const parsed = request(body);

@@ -10,6 +10,8 @@ export type LyricBridge = {
   downloadUrl: (url: string, request: SaveRequest) => Promise<SaveResult>;
   saveFile: (filePath: string, request: SaveRequest) => Promise<SaveResult>;
   createTestClip: () => Promise<PreviewSession>;
+  loadProject: (projectPath: string) => Promise<PreviewSession>;
+  saveTiming: (projectPath: string, timing: PreviewSession["timing"]) => Promise<boolean>;
   onProgress: (callback: (text: string) => void) => () => void;
 };
 

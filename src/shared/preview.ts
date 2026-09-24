@@ -7,13 +7,25 @@ export type PreviewLine = {
   words: PreviewWord[];
 };
 
+export type StoredTiming = {
+  offsetMs: number;
+  rate: number;
+  lines: Record<string, number>;
+  holds: Record<string, number>;
+  texts: Record<string, string>;
+  trans: Record<string, string>;
+  added: { atMs: number; text: string; id: string; trans?: string }[];
+};
+
 export type PreviewSession = {
   title: string;
   artist: string;
   mediaPath: string;
+  projectPath: string;
   mode: "video" | "audio";
   durationMs: number;
   lines: PreviewLine[];
+  timing: StoredTiming;
 };
 
 export function mediaSrc(filePath: string): string {

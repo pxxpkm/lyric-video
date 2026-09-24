@@ -11,6 +11,7 @@ export const HOLD_ACCEL_MS = 1_200;
 export const HOLD_FAST_MS = 2_500;
 export const HOLD_MIN_MS = -30_000;
 export const HOLD_MAX_MS = 180_000;
+export const HOLD_STEP_MS = 250;
 
 export type AddedLyric = {
   atMs: number;
@@ -158,7 +159,20 @@ export function stepForHoldMs(heldMs: number): number {
   return FAST_STEP_MS;
 }
 
+/** 按下立刻一步；按住 400ms 後每 60ms 再一步。毫秒類會加快，停留和速度只重複自己的一步。 */
+export function repeatAdjustment(kind: "ms" | "stay" | "rate", heldMs: number, first: boolean, sign: 1 | -1): number {
+  if (kind === "rate") return sign * RATE_STEP;
+  if (kind === "stay") return sign * HOLD_STEP_MS;
+  const step = first ? STEP_MS : stepForHoldMs(heldMs);
+  return sign * step;
+}
+
 export function formatOffset(ms: number): string {
   const sign = ms > 0 ? "+" : ms < 0 ? "−" : "±";
   return `${sign}${(Math.abs(ms) / 1000).toFixed(2)}s`;
+}
+
+export function formatHold(ms: number): string {
+  if (ms === 0) return "0.00s";
+  return formatOffset(ms);
 }
