@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+release/
+studio-data/
+*.mp4
+*.webm
+*.log

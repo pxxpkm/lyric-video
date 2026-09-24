@@ -1,0 +1,93 @@
+有詞音樂片產生器 — 實作計劃 (Lyric Video Generator)
+輸入：一條片 / YouTube 音樂連結 / 本機影音檔 → 輸出：一條有同步歌詞嘅音樂片 (即時預覽 + 匯出 MP4) 技術棧：Electron + TypeScript (React) + Node 後端 + ffmpeg + yt-dlp OOP：SOLID + Strategy / Adapter / Facade / Observer / Command / Repository 參考基線：C:\Users\Leo\src\DesktopLyric (分支 fix/smtc-sync-and-traditional, tip 922aaea, 119 tests全過)
+
+1. 方案總覽 (推薦做法)
+唔建議 WPF 加功能，建議開新 repo lyric-video-studio，用 Electron 做 UI，歌詞引擎由 DesktopLyric 移植：
+
+
+[Electron Main (Node)]  <--IPC-->  [Renderer (React)]
+  |  Downloader (yt-dlp)      |  ImportView / PreviewView / TimingView / ExportView
+  |  LyricEngine (port)       |  CanvasKaraokeRenderer (rAF)
+  |  VideoExporter (ffmpeg)   |  Virtualized lyric list
+  v                           v
+[Disk cache: media/ + lyrics/ + project.json]
+點解唔直接用 WPF？使用者揀咗 Web/Electron。WPF 嘅 LyricsService.cs、S2TConverter.cs、PlaybackClock.cs、LyricLineView.cs 全部要 port 做 TypeScript，而唔係直接 dll 引用。好處係跨平台、UI 流暢易做 (CSS/Canvas 動畫)、ffmpeg 生態完整；代價係要重寫一次歌詞抓取層 (但只係 HTTP JSON，易 port，有 119 個 test 做 oracle)。
+
+替代方案 (唔推薦)：Electron + .NET sidecar (DesktopLyric.exe --lyric-server)。重用率最高但要綁 .NET runtime + IPC 維護成本高，打包大 ~150MB。第一版唔用，除非 port 後 API 成日斷。
+
+2. 重用 DesktopLyric 嘅嘢 (逐檔對應)
+原檔	新檔 / 用法
+src/DesktopLyric/Services/LyricsService.cs — SearchNetease/SearchQQ/SearchKugou/SearchLrcLib, ParseLrc, ParseYrcLines, MergeYrcTimings, MergeTranslation, SplitMixedLyrics/SplitBilingual, PickByDuration/UsableTrackDuration, LineDisplayEnd/TimeOf/EffectiveMs/ApplyEdits, 常數 ConsecutiveMs 15000 / DefaultLineMs 14500 / HoldAfterMs 400 / TransPairMs 4000	src/main/lyrics/LyricsService.ts + LrcParser.ts + YrcParser.ts + LyricTiming.ts。逐個 function 直譯，連常數唔好改。tests/ 119 個 xunit 轉做 vitest oracle
+Services/LyricCandidate.cs, SavedChoice.cs	src/shared/LyricCandidate.ts (DTO: key/source/title/artist/duration)。揀歌 UI 直接用
+Services/LyricChoiceStore.cs — SearchTitle/SearchArtist/Norm/TitleKeys (「歌名」抽出、- Topic剝、（歌／歌手）、TVサイズ、≥12分鐘唔用 duration)	src/main/lyrics/TitleCleaner.ts。YouTube 標題清理成個抄，post 下載用 yt-dlp --print title/uploader/duration 餵入
+Services/LyricOffsetStore.cs — TrackTiming{OffsetMs,Rate,Lines,Holds,Texts,Trans,Added} + Clamped() + IsIdentity	src/shared/TrackTiming.ts (zod schema) + project.json 存檔格式。時機編輯器嘅 with 不可變更新照抄
+S2TConverter.cs + Dict/STCharacters.txt,STPhrases.txt,HKVariants.txt	src/main/lyrics/S2T.ts + 同樣三個 txt。唔用 opencc-js，直接 port longest-match，保持香港用字一致
+PlaybackClock.cs — Apply/SeekThreshold 1.5s/FrozenEpsilon 250ms	src/renderer/playback/PlaybackClock.ts。餵 <video>.currentTime，讀 position 畫 karaoke
+KaraokeWordTiming.cs — StartMs/DurationMs relative + OverlayFrozen	src/shared/KaraokeWord.ts。Canvas 逐字高亮模型
+LyricFonts.cs: HasKana/CultureFor + FitOverlaySizes 概念	src/renderer/text/TextMetrics.ts (canvas measureText + 自動縮放 ≥0.55)
+Views/TimingEditor 邏輯 — sig-gated rebuild、唔 ScrollIntoView、slider debounce	TimingView.tsx 虛擬化 + throttle 350ms 規則照跟
+RunLog.cs/ErrorLog.cs, AppSettings Load/Save 模式	src/main/store/ProjectStore.ts + logger.ts (寫 %AppData%/LyricVideoStudio/)
+唔要嘅：ShellWindow ClickThrough、WinRtLifetime (SMTC)、TrayIconService、Overlay DropShadow、album-art layered window 全部坑，Electron 唔需要。
+
+3. OOP 設計 (class 圖，SOLID)
+
+LyricProvider (Strategy interface)
+ ├─ NeteaseProvider / QQProvider / KugouProvider / LrclibProvider
+ └─ 每個只識自己嘅 search() + fetchLyrics() + parse()
+
+LyricsFacade ── 統一入口
+  ├─ searchAll(title,artist,duration): Promise<LyricCandidate[]>
+  ├─ fetchBest() / fetchByKey()
+  └─ 內部並行 + PickByDuration + EnsureTranslation (Observer 通知進度)
+
+TitleCleaner (靜態工具) / S2TConverter / Translator (Adapter 包 Google gtx API)
+MediaImporter (Factory — YtImporter | LocalFileImporter): ImportResult{mediaPath,title,artist,duration,cover}
+PlaybackClock (Value object) / KaraokeRenderer (Strategy: LineMode | KaraokeMode | FullscreenMode)
+TrackTimingStore (Repository — load/save project.json, offsets)
+TimingCommand (Command + UndoStack — ShiftLine/HoldLine/EditText/AddLine/SetRate)
+VideoExporter (Facade — LrcToAssConverter + FfmpegRunner + ExportJob Observer)
+原則對應：
+
+SRP：Downloader / Lyric / Timing / Render / Export 各一類，唔好一個 MainWindow 上帝類 (現 DesktopLyric MainWindow.xaml.cs 已經太肥，要拆)。
+OCP：加新歌詞源 (e.g. Musixmatch) 只加一個 LyricProvider，唔改 Facade。
+DIP：Renderer/Exporter 依賴 ILyricLine[] interface，唔依賴 NetEase 具體類。
+Patterns：Strategy (providers + render modes)、Adapter (各廠 API → LrcLine)、Facade (LyricsFacade/VideoExporter)、Observer (下載/搜詞/匯出進度 → UI progress)、Command (時機編輯 undo/redo)、Repository (project/choices/offsets)、Factory (importer)。
+4. UI 流程 (4 步，流暢優先)
+ImportView：貼 URL / 拖本機檔 → 揀「只要音訊 / 原畫保留」→ 顯示 yt-dlp 進度條 (先攞 metadata <2s，再下載)。標題自動經 TitleCleaner 拆歌名/歌手，可手改，可鎖。
+PickSongView (重用 PickSong 概念，非 modal)：並行搜詞，列表顯示來源/時長差/有無譯文/逐字。記住選擇 寫 choices.json。失敗 → 手貼 LRC。
+PreviewView + TimingView：<video> + Canvas karaoke overlay (唔用 DOM per-word span，60fps 會窒)。左係播放預覽 (原詞大、譯文細、下一句淡)，右係可虛擬化歌詞表 (react-virtuoso)。時機微調：整首 offset/rate、逐句 ±50ms、停留、改詞、匯入/匯出 LRC。所有改動即時打落 Canvas + project.json (debounce 200ms)。
+ExportView：揀 1080p / 字體 / karaoke 樣式 / 譯文開關 → 一鍵匯出 MP4 (ffmpeg 燒 ASS)。完成可開檔 / 開資料夾。
+流暢手段：Canvas + requestAnimationFrame 畫當前行 only (diff sig先重排)；歌詞表虛擬化；PlaybackClock 插值唔每幀讀 currentTime；下載/轉碼放 Main process + worker，Renderer 唔阻塞；字體預載 + measureText cache；大檔 (>200MB/≥12min) 警告 + 只用音軌模式。
+
+5. 匯出管線 (Preview 所見即所得)
+
+LrcLine[] + TrackTiming --LrcToAssConverter--> karaoke.ass ({\k} + 譯文雙行 + 樣式)
+media.mp4/m4a + karaoke.ass --ffmpeg--> out.mp4 (libx264 + aac)
+ffmpeg args: -i media -vf "ass=karaoke.ass,scale=1920:-2" -c:v libx264 -preset medium -crf 18 -c:a aac -movflags +faststart
+原片保留：直接 -vf ass 燒入；只要音訊：底圖用封面 / 漸變 + 音浪 (ffmpeg color + showwaves 或 Canvas 錄製，v1 用靜態封面，最穩)。
+字體 embed：帶昭源圓體 TTF + fontsdir，ASS Style 指定 ChironGoRoundTC，避免 Windows 缺字。
+YRC 逐字 → ASS \k (centiseconds)；無 YRC 就整句淡入淡出。
+6. 會踩嘅坑 (預判 + 對策)
+YouTube 下載法律/技術：yt-dlp 會被擋 / 要更新。對策：npm yt-dlp-exec 綁 binary + 自動 --update，失敗轉 cobalt-like 提示；只做個人學習用途提示；bot-check 時 fallback 叫用家拖本機檔。
+各廠歌詞 API 成日變 (DesktopLyric 已經中過：網易舊 search 唔理 query，要轉 cloudsearch/pc)：對策：四源並行 + 一個死唔全死；每個 provider 獨立 try/catch + 8s timeout + UA 偽裝；加 e2e 健康檢查 test。
+對錯歌 / Live 版時機錯：對策：照抄 PickByDuration + duration 12分鐘 guard + 手動 PickSong + TimingEditor offset/rate/hold。
+中日混行 / 簡繁：對策：SplitMixedLyrics + S2T 三檔 + 譯文 500ms 配對，全部 port，唔自己諗新算法。
+Karaoke 效能：DesktopLyric 試過 layered window + DropShadow 直接 wpfgfx 崩。Electron 對策：Canvas 渲染、當前行先重繪、字數 >400 降級整句、無陰影模糊 (用描邊代替)。
+ffmpeg 打包肥 + 缺 codec：對策：ffmpeg-static / ffbinaries，只包 win-x64；轉碼進度經 -progress pipe Observer 回 UI；預設 CRF 18/Medium，唔好預設 slow。
+字體 CJK 量度：canvas 中日韓寬度唔同。對策：預載字體 (document.fonts.load) + measureText cache + FitOverlaySizes 縮放下限 0.55。
+長片/playlist 爆 RAM：v1 只做單條，≥12min 預設「音訊模式」；唔做 playlist (留 v2)。
+版權：匯出片含原 MV 畫面，上傳 YT 會 Content-ID。UI 要提示「只供個人學習」，預設唔加「上傳 YouTube」掣。
+Electron 主/渲染線程阻塞：下載/搜詞/轉碼全部 Main + progress IPC (throttle 200ms)，Renderer 只做畫嘢。
+7. 實行步驟 (里程碑)
+M0 骨架 (Electron+React+TS)：electron-vite 起，Main/Renderer/Shared 三層，logger + project store + ffmpeg/yt-dlp 路徑解析。驗收：開到窗，貼 URL 攞到 title。
+M1 歌詞引擎移植：TitleCleaner → Providers(4) → Lrc/Yrc parse → MergeTranslation → S2T，vitest 將 119 個 xunit 逐個對譯。驗收：同一歌名搜到同 DesktopLyric 差唔多嘅結果。
+M2 預覽播放：<video> + PlaybackClock + Canvas karaoke + PickSong UI + 手貼 LRC。驗收：播本機檔，歌詞同步誤差 <200ms。
+M3 時機編輯：TrackTiming + Command undo/redo + 虛擬化列表 + LRC 匯入匯出。驗收：Live 版可以 offset/rate 對齊。
+M4 匯出：LrcToAss + ffmpeg 燒錄 + 進度條 + 字體 embed。驗收：1080p MP4，VLC 睇到雙語 karaoke。
+M5 打磨：打包 (electron-builder win-x64)、設定頁 (繁體/譯文/romaji)、choices/offsets 記憶、崩潰 log。驗收：無 dev 環境都跑到。
+每步做完跑 vitest + 手播一首日文 (YRC) + 一首中文 + 一條 ≥12min 長片。
+
+8. 驗證
+自動：vitest (port 自 xunit：parse/choice/offset/clock/S2T) + provider mock test (每廠錄一個 fixture JSON，唔打真網)。
+手動：3 首歌 (中/日/英) × (預覽對位 + 匯出 MP4)；斷網/搜唔到/長片三個 edge case；Perf：karaoke 60fps，轉碼進度唔卡 UI。
+唔做：playlist 批次、Mac/Linux、AI 自動對拍 (v2 先考慮 WhisperX)

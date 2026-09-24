@@ -1,0 +1,33 @@
+# 踩坑紀錄
+
+`AGENTS.md` 只保留這份檔的路徑。坑寫在這裡，不要寫回 `AGENTS.md`。
+
+新遇到的坑加在「本專案已遇到」的最上面。每一則包含：日期、現象、原因、對策、影響哪一步。
+
+## 本專案已遇到
+
+### 2026-09-24 這部電腦沒有設定 git 作者
+
+- 現象：`git config user.name` 和 `user.email` 都是空的。直接 commit 會停下來問你是誰。
+- 原因：沒有全域或本機的 git 身份。
+- 對策：不要執行 `git config`（也不要加 `--global`）。這份儲存庫的提交用環境變數帶作者，沿用你在 DesktopLyric 用的 `LeoP` / `182622846+pxxpkm@users.noreply.github.com`，而且只對那一次命令有效。若要改作者，跟使用者確認後再改做法。
+- 影響：本目錄的每一個 commit。
+
+### 2026-09-24 在專案目錄執行 git，卻碰到 `C:\` 的儲存庫
+
+- 現象：當時本目錄還沒有 `.git`。執行 `git status` 向上找到 `C:\`，並因擁有者是 `NT SERVICE\TrustedInstaller` 而報 dubious ownership。
+- 原因：Git 會向上找 `.git`。這個專案自己的儲存庫尚未建立。
+- 對策：只在 `C:\Users\Leo\Lyric Video` 裡 `git init` 和提交。不要執行 `git config --global --add safe.directory C:/`。不要在 `C:\` 做任何 git 操作。
+- 影響：文件這一步通過人手驗證之後的第一個 commit。
+
+## 從 DesktopLyric 帶過來的約束
+
+下面這些已在 DesktopLyric 發生過。本專案直接遵守，不要用實作再試一次來確認。
+
+- 網易雲舊的 `/api/search/get` 會忽略關鍵字。搜尋用 `cloudsearch`。
+- YouTube 的 mix、長片用整段時長對歌會配錯。20 秒以下或 12 分鐘以上的時長不用來對歌詞。
+- 連唱、空檔、譯文配對、快慢步進那些常數改了，現場版和雙語行會整批錯位。
+- 網易雲 YRC 常把日文和中文壓在同一行，要拆開，中文當譯文。逐字超過 80 個就不要再做逐字高亮。
+- 時機介面若每一拍都重建清單或把當前句捲進畫面，會卡、會跳。清單虛擬化，捲動不要跟著播放走。
+- 模糊陰影在桌面歌詞的分層視窗上曾弄垮繪圖。這裡的歌詞用描邊，不做模糊陰影。
+- `%AppData%\DesktopLyric\` 是已發行程式的資料。讀寫會弄髒使用者的桌面歌詞。
