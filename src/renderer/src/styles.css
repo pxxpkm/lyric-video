@@ -203,6 +203,23 @@ button:disabled {
   text-align: center;
 }
 
+.queue {
+  display: grid;
+  gap: 6px;
+  max-height: 160px;
+  overflow: auto;
+}
+
+.queue-item {
+  text-align: left;
+  background: #1c2028;
+  color: inherit;
+}
+
+.queue-item:disabled {
+  opacity: 0.7;
+}
+
 .line-row input {
   flex: 1;
   min-width: 0;

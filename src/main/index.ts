@@ -2,12 +2,19 @@ import { app, BrowserWindow, net, protocol } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { appendFileSync } from "node:fs";
 import { installDict } from "../core/s2t";
 import { registerImportIpc } from "./ipc";
-import { ensureLogDir } from "./log";
+import { ensureLogDir, logDir } from "./log";
+import { resourceRoot, setRoots } from "./paths";
+
+setRoots({
+  studio: () => (app.isPackaged ? join(app.getPath("userData"), "studio-data") : join(process.cwd(), "studio-data")),
+  resources: () => (app.isPackaged ? process.resourcesPath : process.cwd()),
+});
 
 function loadDict(): void {
-  const root = process.cwd();
+  const root = resourceRoot();
   installDict(
     readFileSync(join(root, "dict/STCharacters.txt"), "utf8"),
     readFileSync(join(root, "dict/STPhrases.txt"), "utf8"),
@@ -46,6 +53,17 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true },
   },
 ]);
+
+function noteCrash(error: unknown): void {
+  try {
+    appendFileSync(join(logDir(), "crash.log"), `${new Date().toISOString()} ${String(error)}\n`, "utf8");
+  } catch {
+    /* the log directory may not exist yet */
+  }
+}
+
+process.on("uncaughtException", noteCrash);
+process.on("unhandledRejection", noteCrash);
 
 registerImportIpc();
 

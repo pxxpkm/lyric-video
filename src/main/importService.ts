@@ -5,11 +5,10 @@ import { join } from "node:path";
 import { planImport, projectFromImport, titleFromFileName } from "../core/importPlan";
 import { saveProject } from "./projectFile";
 import { downloadUrl, IMPORT_FAIL, probeFile, probeUrl } from "./media";
+import { studioRoot } from "./paths";
 import type { ProbeResult, SaveRequest, SaveResult } from "../shared/import";
 
-export function studioRoot(): string {
-  return join(process.cwd(), "studio-data");
-}
+export { studioRoot };
 
 function projectDir(seed: string): string {
   const safe = seed.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40) || "track";

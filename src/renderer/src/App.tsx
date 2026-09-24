@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ImportDraft, SaveRequest } from "../../shared/import";
 import type { PreviewSession } from "../../shared/preview";
+import type { QueueJob } from "./lyric";
 import { Preview } from "./Preview";
 
 type Source = { kind: "youtube"; url: string } | { kind: "file"; path: string } | null;
@@ -27,8 +28,17 @@ export function App() {
   const [savedPath, setSavedPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [screen, setScreen] = useState<"import" | "preview">("import");
+  const [showTrans, setShowTrans] = useState(true);
+  const [queueText, setQueueText] = useState("");
+  const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [session, setSession] = useState<PreviewSession | null>(null);
   const [savedPreview, setSavedPreview] = useState<PreviewSession | null>(null);
+
+  useEffect(() => {
+    if (!window.lyric) return;
+    void window.lyric.getSettings().then((settings) => setShowTrans(settings.showTrans));
+    return window.lyric.onQueue(setJobs);
+  }, []);
 
   useEffect(() => {
     if (!window.lyric) {
@@ -148,7 +158,7 @@ export function App() {
     setBusy(true);
     setError("");
     try {
-      setSession(await window.lyric.createTestClip());
+      setSession(await window.lyric.enqueueTest());
       setScreen("preview");
     } catch {
       setError("測試片沒有建立。");
@@ -158,7 +168,7 @@ export function App() {
   }
 
   if (screen === "preview" && session) {
-    return <Preview session={session} onBack={() => setScreen("import")} />;
+    return <Preview session={session} showTrans={showTrans} onBack={() => setScreen("import")} />;
   }
 
   return (
@@ -237,6 +247,64 @@ export function App() {
         <button type="button" disabled={busy} onClick={() => void openTestClip()}>
           打開測試片
         </button>
+        <div className="row">
+          <label className="lock">
+            <input type="checkbox" checked disabled />
+            轉繁體
+          </label>
+          <label className="lock">
+            <input
+              type="checkbox"
+              checked={showTrans}
+              onChange={(event) => {
+                const next = event.target.checked;
+                setShowTrans(next);
+                void window.lyric.setShowTrans(next);
+              }}
+            />
+            顯示譯文
+          </label>
+          <label className="lock">
+            <input type="checkbox" checked={false} disabled />
+            羅馬字（稍後）
+          </label>
+        </div>
+        <label>
+          佇列（每行一條網址）
+          <textarea value={queueText} rows={3} onChange={(event) => setQueueText(event.target.value)} />
+        </label>
+        <button
+          type="button"
+          disabled={!queueText.trim()}
+          onClick={() => {
+            void window.lyric.enqueueUrls(queueText).then(setJobs);
+            setQueueText("");
+          }}
+        >
+          排入佇列
+        </button>
+        <div className="queue">
+          {jobs.length === 0 ? <p className="meta">尚未排入</p> : null}
+          {jobs.map((job) => (
+            <button
+              key={job.id}
+              type="button"
+              className="queue-item"
+              disabled={job.status !== "ready"}
+              onClick={() => {
+                void window.lyric.openJob(job.id).then((loaded) => {
+                  if (!loaded) return;
+                  setSession(loaded);
+                  setScreen("preview");
+                });
+              }}
+            >
+              <span>
+                {job.label} · {job.message}
+              </span>
+            </button>
+          ))}
+        </div>
         {error ? <p className="error">{error}</p> : null}
         {savedPath ? <p className="meta">專案：{savedPath}</p> : null}
       </div>

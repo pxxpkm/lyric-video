@@ -1,5 +1,5 @@
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { buildKaraokeAss } from "../core/ass";
 import { lyricLine, type LyricLine } from "../core/lyrics";
 import { timingFromProject } from "../core/projectTiming";
@@ -30,12 +30,20 @@ export async function exportProject(
     }),
   ) satisfies LyricLine[];
   await writeFile(assPath, buildKaraokeAss(lines, timingFromProject(request.timing)), "utf8");
-  onProgress("正在燒進影片");
 
   const part = join(folder, "out.part.mp4");
   const outPath = join(folder, "out.mp4");
-  const fonts = relative(folder, fontsDir).replaceAll("\\", "/");
-  const filter = `ass=karaoke.ass:fontsdir=${fonts}`;
+  const fonts = assFontsDirPlan(folder, fontsDir);
+  if (fonts.copyTo) {
+    onProgress("正在準備字體");
+    try {
+      await ensureExportFonts(fontsDir, fonts.copyTo);
+    } catch {
+      return { ok: false, error: "字體未能複製到匯出目錄" };
+    }
+  }
+  onProgress("正在燒進影片");
+  const filter = `ass=karaoke.ass:fontsdir=${fonts.token}`;
   const args =
     request.mode === "audio"
       ? [
@@ -102,6 +110,45 @@ export async function exportProject(
   await rename(part, outPath);
   onProgress("匯出完成");
   return { ok: true, outPath, assPath };
+}
+
+const SAFE_ASS_PATH = /^[A-Za-z0-9._/-]+$/;
+
+export type AssFontsDirPlan = { token: string; copyTo: string | null };
+
+// ass 濾鏡把空格和冒號當成分隔。跳脫磁碟機冒號不夠，路徑裡有空格仍會斷。
+export function assFontsDirPlan(clipFolder: string, fontsDir: string): AssFontsDirPlan {
+  const direct = safeAssRelative(clipFolder, fontsDir);
+  if (direct) return { token: direct, copyTo: null };
+  const staged = resolve(clipFolder, "..", "..", "export-fonts");
+  const token = safeAssRelative(clipFolder, staged);
+  if (token) return { token, copyTo: staged };
+  return { token: "export-fonts", copyTo: join(clipFolder, "export-fonts") };
+}
+
+function safeAssRelative(from: string, to: string): string | null {
+  const rel = relative(from, to);
+  if (!rel || isAbsolute(rel)) return null;
+  const token = rel.replaceAll("\\", "/");
+  if (!SAFE_ASS_PATH.test(token)) return null;
+  return token;
+}
+
+export async function ensureExportFonts(fromDir: string, toDir: string): Promise<void> {
+  await mkdir(toDir, { recursive: true });
+  for (const name of await readdir(fromDir)) {
+    const src = join(fromDir, name);
+    const info = await stat(src);
+    if (!info.isFile()) continue;
+    const dest = join(toDir, name);
+    try {
+      const have = await stat(dest);
+      if (have.isFile() && have.size === info.size && have.mtimeMs >= info.mtimeMs) continue;
+    } catch {
+      // 目的地還沒有這個檔。
+    }
+    await copyFile(src, dest);
+  }
 }
 
 export function readExportProgress(chunk: string, durationMs: number): string | null {

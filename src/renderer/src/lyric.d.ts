@@ -21,7 +21,22 @@ export type LyricBridge = {
     timing: PreviewSession["timing"];
   }) => Promise<{ ok: true; outPath: string; assPath: string } | { ok: false; error: string }>;
   onExportProgress: (callback: (text: string) => void) => () => void;
+  getSettings: () => Promise<{ showTrans: boolean; traditional: true; romaji: false }>;
+  setShowTrans: (showTrans: boolean) => Promise<{ showTrans: boolean }>;
+  enqueueUrls: (text: string) => Promise<QueueJob[]>;
+  enqueueFile: (filePath: string) => Promise<QueueJob[]>;
+  enqueueTest: () => Promise<PreviewSession>;
+  openJob: (id: string) => Promise<PreviewSession | null>;
+  onQueue: (callback: (jobs: QueueJob[]) => void) => () => void;
   onProgress: (callback: (text: string) => void) => () => void;
+};
+
+export type QueueJob = {
+  id: string;
+  label: string;
+  status: "waiting" | "running" | "ready" | "failed";
+  message: string;
+  projectPath?: string;
 };
 
 declare global {

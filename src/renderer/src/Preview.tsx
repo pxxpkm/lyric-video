@@ -8,7 +8,15 @@ import type { TrackTiming } from "../../core/timing";
 import { mediaSrc, type PreviewSession } from "../../shared/preview";
 import { BackIcon, IconButton, PauseIcon, PlayIcon } from "./icons";
 
-export function Preview({ session, onBack }: { session: PreviewSession; onBack: () => void }) {
+export function Preview({
+  session,
+  showTrans,
+  onBack,
+}: {
+  session: PreviewSession;
+  showTrans: boolean;
+  onBack: () => void;
+}) {
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const linesRef = useRef(sessionLines(session.lines));
@@ -25,10 +33,12 @@ export function Preview({ session, onBack }: { session: PreviewSession; onBack: 
   const hasLyrics = session.lines.length > 0;
 
   useEffect(() => {
-    linesRef.current = sessionLines(session.lines);
+    linesRef.current = sessionLines(session.lines).map((line) =>
+      showTrans ? line : { ...line, translatedText: null },
+    );
     debugRef.current = debug;
     timingRef.current = timing;
-  }, [session, debug, timing]);
+  }, [session, debug, timing, showTrans]);
 
   useEffect(() => window.lyric.onExportProgress(setExportText), []);
 
@@ -78,7 +88,7 @@ export function Preview({ session, onBack }: { session: PreviewSession; onBack: 
         mediaPath: session.mediaPath,
         mode: session.mode,
         durationMs: session.durationMs,
-        lines: session.lines,
+        lines: showTrans ? session.lines : session.lines.map((line) => ({ ...line, trans: "" })),
         timing: timingForProject(timing),
       });
       setExportText(result.ok ? result.outPath : result.error);

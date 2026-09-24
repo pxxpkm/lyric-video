@@ -1,12 +1,17 @@
 import { ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { join } from "node:path";
 import { exportProject, type ExportRequest } from "./exportVideo";
+import { resourceRoot } from "./paths";
+import { enqueueFile, enqueueTest, enqueueUrls, jobSession, listJobs } from "./queue";
+import { readSettings, writeSettings } from "./settings";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { IMPORT_FAIL } from "./media";
 import { createTestClip, loadPreview, savePreviewTiming } from "./testClip";
 import { timingFromProject } from "../core/projectTiming";
 import type { StoredTiming } from "../shared/preview";
 import type { SaveRequest } from "../shared/import";
+
+let exportBusy = false;
 
 function fields(value: unknown): { lockTitle: boolean; lockArtist: boolean; title: string; artist: string } {
   const row = value != null && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -84,14 +89,40 @@ export function registerImportIpc(): void {
     if (!request) return { ok: false, error: "沒有可匯出的歌詞" };
     if (request.lines.length === 0) return { ok: false, error: "沒有可匯出的歌詞" };
     let last = 0;
-    const result = await exportProject(request, join(process.cwd(), "fonts"), (text) => {
-      const now = Date.now();
-      if (now - last < 200 && !text.startsWith("匯出")) return;
-      last = now;
-      event.sender.send("export:progress", text);
-    });
-    if (result.ok) await shell.openPath(result.outPath);
-    return result;
+    if (exportBusy) return { ok: false, error: "另一條正在匯出" };
+    exportBusy = true;
+    try {
+      const result = await exportProject(request, join(resourceRoot(), "fonts"), (text) => {
+        const now = Date.now();
+        if (now - last < 200 && !text.startsWith("匯出")) return;
+        last = now;
+        event.sender.send("export:progress", text);
+      });
+      if (result.ok) await shell.openPath(result.outPath);
+      return result;
+    } finally {
+      exportBusy = false;
+    }
+  });
+
+  ipcMain.handle("settings:get", () => readSettings());
+  ipcMain.handle("settings:set", (_event, showTrans: unknown) => writeSettings({ showTrans: showTrans !== false }));
+  ipcMain.handle("queue:list", () => listJobs());
+  ipcMain.handle("queue:urls", (_event, text: unknown) => {
+    if (typeof text === "string") enqueueUrls(text);
+    return listJobs();
+  });
+  ipcMain.handle("queue:file", (_event, filePath: unknown) => {
+    if (typeof filePath === "string") enqueueFile(filePath);
+    return listJobs();
+  });
+  ipcMain.handle("queue:test", () => enqueueTest());
+  ipcMain.handle("queue:open", (_event, id: unknown) => {
+    if (typeof id !== "string") return null;
+    return jobSession(id);
+  });
+  ipcMain.on("queue:listen", (event) => {
+    event.sender.send("queue:update", listJobs());
   });
 
   ipcMain.handle("preview:save", async (_event, projectPath: unknown, timing: unknown) => {

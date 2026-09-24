@@ -6,6 +6,13 @@
 
 ## 本專案已遇到
 
+### 2026-09-24 打包後匯出，ass 濾鏡被字體路徑裡的空格切斷
+
+- 現象：用 `release\win-unpacked\LyricVideo.exe` 匯出測試片，畫面停在 `Error parsing filterchain 'ass=karaoke.ass:fontsdir=C\:/Users/Leo/Lyric\ Video/release/win-unpacked/resources/fonts'`，接著打不開 `out.part.mp4`，回報 `Invalid argument`。沒有 `out.mp4`。
+- 原因：ffmpeg 的 ass 濾鏡用冒號和空格切參數。字體在 `Lyric Video\release\...\resources\fonts`。把磁碟機冒號寫成 `C\:`、空格寫成 `\ ` 仍會斷，ffmpeg 會說 `No option name near '/Users/Leo/Lyric Video/...'`。開發時字體和片子在同一棵樹，相對路徑 `../../fonts` 沒有空格，所以先前能匯出。
+- 對策：濾鏡的 `fontsdir` 只放 `[A-Za-z0-9._/-]` 這種相對路徑，工作目錄仍是該片資料夾。打包後相對路徑含空格時，先把字體複製到 `%AppData%\lyric-video\export-fonts`，濾鏡用 `../../export-fonts`。不要改回絕對路徑跳脫。
+- 影響：M7 匯出。
+
 ### 2026-09-24 `npm install` 之後 Electron 本體不在
 
 - 現象：`npm run dev` 報 `Error: Electron uninstall`。`node_modules/electron` 有套件，沒有 `path.txt` 和 `dist/electron.exe`。
