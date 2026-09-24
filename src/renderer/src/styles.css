@@ -10,21 +10,102 @@ body {
 }
 
 main {
+  box-sizing: border-box;
   min-height: 100vh;
+  padding: 28px 20px 40px;
   display: grid;
-  align-content: center;
   justify-items: center;
-  gap: 0.4rem;
+  align-content: start;
+  gap: 8px;
 }
 
 h1 {
   margin: 0;
-  font-size: 2rem;
+  font-size: 1.8rem;
   font-weight: 650;
 }
 
-p {
-  margin: 0;
+.status {
+  margin: 0 0 8px;
   color: #b7c0cc;
-  font-size: 1.05rem;
+}
+
+.card {
+  width: min(640px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #b7c0cc;
+  font-size: 0.92rem;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+}
+
+.row label {
+  flex: 1;
+}
+
+.lock {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding-bottom: 8px;
+  white-space: nowrap;
+}
+
+input[type="text"],
+input[type="url"],
+select {
+  font: inherit;
+  color: inherit;
+  background: #1c2028;
+  border: 1px solid #2c3340;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+button {
+  font: inherit;
+  background: #e8eaee;
+  color: #14161b;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.drop {
+  border: 1px dashed #3c4556;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  color: #b7c0cc;
+}
+
+.note {
+  margin: 0;
+  color: #e6c07b;
+}
+
+.error {
+  margin: 0;
+  color: #f0a8a8;
+}
+
+.meta {
+  margin: 0;
+  color: #d5dbe4;
 }
