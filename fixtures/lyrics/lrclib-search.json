@@ -1,0 +1,17 @@
+[
+  {
+    "id": 42,
+    "trackName": "七里香",
+    "artistName": "周杰倫",
+    "albumName": "七里香",
+    "duration": 271.2,
+    "syncedLyrics": "[00:10.00]窗外的麻雀"
+  },
+  {
+    "id": 43,
+    "trackName": "沒有同步詞",
+    "artistName": "周杰倫",
+    "duration": 200,
+    "syncedLyrics": null
+  }
+]

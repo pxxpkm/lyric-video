@@ -1,0 +1,19 @@
+{
+  "req": {
+    "data": {
+      "body": {
+        "song": {
+          "list": [
+            {
+              "mid": "0039MnYb0qxYhV",
+              "name": "七里香",
+              "interval": 271,
+              "singer": [{ "name": "周杰倫" }],
+              "album": { "name": "七里香" }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

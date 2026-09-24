@@ -119,6 +119,54 @@ export function parseLrc(raw: string): LyricLine[] {
   return lines;
 }
 
+export function isInstrumentalPlaceholder(lines: LyricLine[]): boolean {
+  const meaningful = lines.filter((line) => line.text.trim());
+  if (meaningful.length === 0) return false;
+  return meaningful.every((line) => {
+    const s = line.text.replaceAll(" ", "");
+    return (
+      s.includes("纯音乐") ||
+      s.includes("純音樂") ||
+      s.includes("请欣赏") ||
+      s.includes("請欣賞") ||
+      s.includes("没有歌词") ||
+      s.includes("沒有歌詞")
+    );
+  });
+}
+
+export function mergeYrcTimings(lyrics: LyricLine[], yrcBody: string): void {
+  const yrcLines = parseYrcLines(yrcBody);
+  if (yrcLines.length === 0) return;
+  let yi = 0;
+  for (const line of lyrics) {
+    const ms = Math.round(line.timeMs);
+    while (yi < yrcLines.length && yrcLines[yi].startMs + 150 < ms) yi++;
+    if (yi >= yrcLines.length) break;
+    if (Math.abs(yrcLines[yi].startMs - ms) <= 1200) {
+      line.words = yrcLines[yi].words;
+      if (yrcLines[yi].durMs > 0) line.durationMs = yrcLines[yi].durMs;
+      yi++;
+    }
+  }
+}
+
+export function mergeTranslation(orig: LyricLine[], trans: LyricLine[]): void {
+  for (const t of trans) {
+    if (!t.text.trim()) continue;
+    let best: LyricLine | null = null;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    for (const line of orig) {
+      const delta = Math.abs(line.timeMs - t.timeMs);
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        best = line;
+      }
+    }
+    if (best && bestDelta < 500) best.translatedText = t.text;
+  }
+}
+
 export function parseYrcLines(yrc: string): YrcLine[] {
   const result: YrcLine[] = [];
   for (const raw of yrc.split("\n")) {
