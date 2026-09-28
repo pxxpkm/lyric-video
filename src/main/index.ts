@@ -1,8 +1,9 @@
-import { app, BrowserWindow, net, protocol } from "electron";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { app, BrowserWindow, protocol } from "electron";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { appendFileSync } from "node:fs";
+import { join } from "node:path";
+import { Readable } from "node:stream";
+import { mediaType, parseByteRange } from "./mediaFile";
 import { installDict } from "../core/s2t";
 import { registerImportIpc } from "./ipc";
 import { ensureLogDir, logDir } from "./log";
@@ -71,7 +72,32 @@ app.whenReady().then(async () => {
   protocol.handle("media", (request) => {
     const filePath = decodeURIComponent(new URL(request.url).searchParams.get("path") ?? "");
     if (!filePath || !existsSync(filePath)) return new Response("找不到檔案", { status: 404 });
-    return net.fetch(pathToFileURL(filePath).href);
+    const size = statSync(filePath).size;
+    const type = mediaType(filePath);
+    const range = parseByteRange(request.headers.get("range"), size);
+    if (!range) {
+      const stream = createReadStream(filePath);
+      request.signal.addEventListener("abort", () => stream.destroy());
+      return new Response(Readable.toWeb(stream) as ReadableStream, {
+        status: 200,
+        headers: {
+          "Content-Type": type,
+          "Content-Length": String(size),
+          "Accept-Ranges": "bytes",
+        },
+      });
+    }
+    const stream = createReadStream(filePath, { start: range.start, end: range.end });
+    request.signal.addEventListener("abort", () => stream.destroy());
+    return new Response(Readable.toWeb(stream) as ReadableStream, {
+      status: 206,
+      headers: {
+        "Content-Type": type,
+        "Content-Length": String(range.end - range.start + 1),
+        "Content-Range": `bytes ${range.start}-${range.end}/${size}`,
+        "Accept-Ranges": "bytes",
+      },
+    });
   });
   try {
     loadDict();

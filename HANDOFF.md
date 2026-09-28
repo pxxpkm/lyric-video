@@ -6,17 +6,17 @@ M7 已收貨。不要把時機畫面改回 DesktopLyric。M8 的範圍以 `docs/
 
 ## 現在停在哪
 
-M0 到 M7 已提交。M7 的訊息是 `M7：打包、連續佇列與打包後匯出`。
+M0 到 M7 已提交。M7 的訊息是 `M7：打包、連續佇列與打包後匯出`。目前源碼版本是 beta 0.5（`package.json` 的 `0.5.0`）。給外人看的說明在 `README.md`。上次打好的安裝檔仍是 `LyricVideo Setup 0.0.0.exe`，要 `npm run dist` 才會變成 0.5.0。
 
-M8 還沒開始寫程式。已定範圍裡的四源搜詞和揀歌，先前只做了離線評分，沒有連網，也沒有選擇歌詞畫面。
+M8 已寫進程式，**使用者還沒驗，也還沒說可以**。不要提交。還沒提交的還有：選擇歌詞、字體模組（拖動、裙邊、字級、顏色）、自畫的播放時間條、媒體按位元組範圍讀取、匯出時自選路徑且預設檔名是歌名、暫存檔必須是 `歌名.part.mp4`。範圍和人手步驟在 `docs/dev-plan.md` 頂部。
 
 安裝檔在 `release\LyricVideo Setup 0.0.0.exe`。免安裝可開 `release\win-unpacked\LyricVideo.exe`。`release/` 被 gitignore，不進 commit。M7 提交時的安裝檔是字體路徑修正之後打的。
 
-自動測試在 M7 提交前是 142 項通過。
+自動測試最近一次是 161 項通過，寫在 `docs/dev-plan.md` 最新的過程紀錄。M7 提交前是 142 項。
 
 ## 產品現況
 
-Electron + TypeScript + React。歌詞核心在 `src/core`，不連網。yt-dlp 和 ffmpeg 在主程序。四源搜詞的解析和評分在 `src/core`，主程序還沒有發出搜詞請求。預覽用 `<video>` / `<audio>` 的 `currentTime`，不要套 DesktopLyric 的 `PlaybackClock`。
+Electron + TypeScript + React。歌詞核心在 `src/core`，不連網。yt-dlp、ffmpeg、四源搜詞的 HTTP 在主程序。預覽用 `<video>` / `<audio>` 的 `currentTime`，不要套 DesktopLyric 的 `PlaybackClock`。
 
 已提交的能力：匯入連結或本機檔、離線搜詞評分、測試片預覽、選句改時機、按「匯出 MP4」才燒 `karaoke.ass`、打包與連續佇列。字體是 `fonts/ChironGoRoundTC-Regular.ttf`（昭源圓體，約 27MB）。
 
@@ -46,9 +46,9 @@ Electron + TypeScript + React。歌詞核心在 `src/core`，不連網。yt-dlp 
 
 打包沒有自訂圖示，用了 Electron 預設圖示。yt-dlp 和 ffmpeg 沒有打進安裝檔，仍然靠這部電腦的 PATH。
 
-## M8
+## M8 待驗證
 
-連網四源搜詞，以及選擇歌詞畫面。貼上連結後，預覽要嘛有對應歌詞，要嘛先讓人揀。細節在 `docs/dev-plan.md` 的 M8。
+建立專案後查網易雲、QQ、酷狗、LRCLIB。夠自信就寫進該片並預覽。否則打開「選擇歌詞」。測試片不連網。記住的選擇在 `%AppData%\LyricVideoStudio\choices.json`，不要寫進 DesktopLyric。細節和人手步驟在 `docs/dev-plan.md` 頂部。
 
 下面這些仍只是寫程式時知道容易壞的地方，使用者沒有把它們點名成 bug：
 

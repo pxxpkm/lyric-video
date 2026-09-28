@@ -1,17 +1,26 @@
-import { ipcMain, shell, type IpcMainInvokeEvent } from "electron";
-import { join } from "node:path";
+import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { mp4FileName } from "../core/exportName";
 import { exportProject, type ExportRequest } from "./exportVideo";
 import { resourceRoot } from "./paths";
-import { enqueueFile, enqueueTest, enqueueUrls, jobSession, listJobs } from "./queue";
+import { browseProject, matchProject, useCandidate } from "./matchLyrics";
+import { enqueueFile, enqueueTest, enqueueUrls, listJobs, openJob } from "./queue";
 import { readSettings, writeSettings } from "./settings";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { IMPORT_FAIL } from "./media";
 import { createTestClip, loadPreview, savePreviewTiming } from "./testClip";
+import { clampLook, type LyricLook } from "../core/lyricLook";
 import { timingFromProject } from "../core/projectTiming";
 import type { StoredTiming } from "../shared/preview";
 import type { SaveRequest } from "../shared/import";
 
 let exportBusy = false;
+
+function searchFields(value: unknown): { lockTitle: boolean; lockArtist: boolean; title: string; artist: string } | null {
+  if (value == null) return null;
+  return fields(value);
+}
 
 function fields(value: unknown): { lockTitle: boolean; lockArtist: boolean; title: string; artist: string } {
   const row = value != null && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -53,6 +62,9 @@ function exportRequest(value: unknown): ExportRequest | null {
     durationMs,
     lines: row.lines as ExportRequest["lines"],
     timing: row.timing as ExportRequest["timing"],
+    look: row.look != null && typeof row.look === "object" ? clampLook(row.look as Partial<LyricLook>) : undefined,
+    title: typeof row.title === "string" ? row.title : "",
+    outPath: "",
   };
 }
 
@@ -90,6 +102,15 @@ export function registerImportIpc(): void {
     if (request.lines.length === 0) return { ok: false, error: "沒有可匯出的歌詞" };
     let last = 0;
     if (exportBusy) return { ok: false, error: "另一條正在匯出" };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const dialogOptions = {
+      title: "匯出 MP4",
+      defaultPath: join(dirname(request.projectPath), mp4FileName(request.title)),
+      filters: [{ name: "MP4", extensions: ["mp4"] }],
+    };
+    const picked = win ? await dialog.showSaveDialog(win, dialogOptions) : await dialog.showSaveDialog(dialogOptions);
+    if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+    request.outPath = picked.filePath.toLowerCase().endsWith(".mp4") ? picked.filePath : `${picked.filePath}.mp4`;
     exportBusy = true;
     try {
       const result = await exportProject(request, join(resourceRoot(), "fonts"), (text) => {
@@ -119,16 +140,47 @@ export function registerImportIpc(): void {
   ipcMain.handle("queue:test", () => enqueueTest());
   ipcMain.handle("queue:open", (_event, id: unknown) => {
     if (typeof id !== "string") return null;
-    return jobSession(id);
+    return openJob(id);
+  });
+  ipcMain.handle("lyric:match", async (event, projectPath: unknown) => {
+    if (typeof projectPath !== "string") return { ok: false, error: "沒有專案" };
+    event.sender.send("import:progress", "正在搜尋歌詞");
+    try {
+      return await matchProject(projectPath);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "搜尋失敗" };
+    }
+  });
+  ipcMain.handle("lyric:browse", async (event, projectPath: unknown, fields: unknown) => {
+    if (typeof projectPath !== "string") return { ok: false, error: "沒有專案" };
+    event.sender.send("import:progress", "正在搜尋歌詞");
+    try {
+      return await browseProject(projectPath, searchFields(fields));
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "搜尋失敗" };
+    }
+  });
+  ipcMain.handle("lyric:use", async (_event, projectPath: unknown, key: unknown, remember: unknown) => {
+    if (typeof projectPath !== "string" || typeof key !== "string") return { ok: false, error: "請再搜一次" };
+    try {
+      return await useCandidate(projectPath, key, remember === true);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "抓不到這份歌詞" };
+    }
   });
   ipcMain.on("queue:listen", (event) => {
     event.sender.send("queue:update", listJobs());
   });
 
-  ipcMain.handle("preview:save", async (_event, projectPath: unknown, timing: unknown) => {
+  ipcMain.handle("preview:save", async (_event, projectPath: unknown, timing: unknown, look: unknown) => {
     if (typeof projectPath !== "string" || timing == null || typeof timing !== "object") return false;
-    await savePreviewTiming(projectPath, timingFromProject(timing as StoredTiming));
+    const nextLook = look != null && typeof look === "object" ? clampLook(look as Partial<LyricLook>) : undefined;
+    await savePreviewTiming(projectPath, timingFromProject(timing as StoredTiming), nextLook);
     return true;
+  });
+  ipcMain.handle("look:chiron", async () => {
+    const bytes = await readFile(join(resourceRoot(), "fonts", "ChironGoRoundTC-Regular.ttf"));
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   });
 
   ipcMain.handle("import:save-file", async (_event, filePath: unknown, body: unknown) => {

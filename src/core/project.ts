@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { defaultLook } from "./lyricLook";
 
 const wordSchema = z.object({
   startMs: z.number().int(),
@@ -52,7 +53,16 @@ export const projectSchema = z.object({
   style: z.object({
     showTrans: z.boolean(),
     karaoke: z.boolean(),
-    font: z.string(),
+    font: z.string().default(defaultLook.font),
+    size: z.number().default(defaultLook.size),
+    color: z.string().default(defaultLook.color),
+    sungColor: z.string().default(defaultLook.sungColor),
+    outline: z.number().default(defaultLook.outline),
+    outlineColor: z.string().default(defaultLook.outlineColor),
+    transScale: z.number().default(defaultLook.transScale),
+    nextOpacity: z.number().default(defaultLook.nextOpacity),
+    x: z.number().default(defaultLook.x),
+    y: z.number().default(defaultLook.y),
   }),
   decision: z.object({
     autoAccepted: z.boolean(),
@@ -88,7 +98,20 @@ export function exampleProject(): Project {
       trans: {},
       added: [],
     },
-    style: { showTrans: true, karaoke: true, font: "ChironGoRoundTC" },
+    style: {
+      showTrans: true,
+      karaoke: true,
+      font: defaultLook.font,
+      size: defaultLook.size,
+      color: defaultLook.color,
+      sungColor: defaultLook.sungColor,
+      outline: defaultLook.outline,
+      outlineColor: defaultLook.outlineColor,
+      transScale: defaultLook.transScale,
+      nextOpacity: defaultLook.nextOpacity,
+      x: defaultLook.x,
+      y: defaultLook.y,
+    },
     decision: { autoAccepted: false, score: 0, reason: "" },
   };
 }

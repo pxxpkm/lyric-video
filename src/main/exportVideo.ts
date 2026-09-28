@@ -1,6 +1,8 @@
 import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { buildKaraokeAss } from "../core/ass";
+import { exportPartPath } from "../core/exportName";
+import { clampLook, type LyricLook } from "../core/lyricLook";
 import { lyricLine, type LyricLine } from "../core/lyrics";
 import { timingFromProject } from "../core/projectTiming";
 import type { PreviewLine, StoredTiming } from "../shared/preview";
@@ -13,6 +15,9 @@ export type ExportRequest = {
   durationMs: number;
   lines: PreviewLine[];
   timing: StoredTiming;
+  look?: LyricLook;
+  title?: string;
+  outPath: string;
 };
 
 export async function exportProject(
@@ -29,10 +34,11 @@ export async function exportProject(
       words: line.words.length > 0 ? line.words : null,
     }),
   ) satisfies LyricLine[];
-  await writeFile(assPath, buildKaraokeAss(lines, timingFromProject(request.timing)), "utf8");
+  await writeFile(assPath, buildKaraokeAss(lines, timingFromProject(request.timing), clampLook(request.look)), "utf8");
 
-  const part = join(folder, "out.part.mp4");
-  const outPath = join(folder, "out.mp4");
+  const outPath = request.outPath;
+  await mkdir(dirname(outPath), { recursive: true });
+  const part = exportPartPath(outPath);
   const fonts = assFontsDirPlan(folder, fontsDir);
   if (fonts.copyTo) {
     onProgress("正在準備字體");
@@ -43,7 +49,7 @@ export async function exportProject(
     }
   }
   onProgress("正在燒進影片");
-  const filter = `ass=karaoke.ass:fontsdir=${fonts.token}`;
+  const filter = `ass=karaoke.ass:fontsdir=${fonts.token}:original_size=1920x1080`;
   const args =
     request.mode === "audio"
       ? [

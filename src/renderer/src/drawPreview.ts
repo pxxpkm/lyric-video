@@ -1,5 +1,6 @@
 import { lyricClockMs, mediaMsForLyric, previewFrame, type PreviewFrame } from "../../core/preview";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
+import { canvasFont, defaultLook, type LyricLook } from "../../core/lyricLook";
 import { defaultTiming, type TrackTiming } from "../../core/timing";
 import type { PreviewLine } from "../../shared/preview";
 
@@ -19,6 +20,7 @@ export function drawPreview(
   mode: "video" | "audio",
   debug: boolean,
   timing: TrackTiming = defaultTiming(),
+  look: LyricLook = defaultLook,
 ): PreviewFrame {
   const lyricMs = lyricClockMs(mediaMs, timing.offsetMs, timing.rate);
   const shown = applyEdits(lines, timing);
@@ -42,23 +44,28 @@ export function drawPreview(
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  const center = width / 2;
+  const scale = height / 1080;
+  const fontPx = look.size * scale;
+  const edge = Math.max(look.outline * scale, look.outline > 0 ? 1 : 0);
+  const x = look.x * width;
+  const y = look.y * height;
   if (!frame.text) {
-    ctx.fillStyle = "#d5dbe4";
-    ctx.font = "32px 'Microsoft JhengHei', 'Segoe UI', sans-serif";
-    ctx.fillText("尚未有歌詞", center, height * 0.62);
+    ctx.font = canvasFont(look, Math.max(16, fontPx * 0.7));
+    paint(ctx, "尚未有歌詞", x, y, look.color, look.outlineColor, edge);
   } else {
     const line = shown[frame.index];
-    drawCurrent(ctx, line?.words ?? null, frame, center, height * 0.62);
+    drawCurrent(ctx, line?.words ?? null, frame, x, y, look, fontPx, edge);
     if (frame.trans) {
-      ctx.fillStyle = "#c5d0dc";
-      ctx.font = "24px 'Microsoft JhengHei', 'Segoe UI', sans-serif";
-      ctx.fillText(frame.trans, center, height * 0.74);
+      const transPx = fontPx * look.transScale;
+      ctx.font = canvasFont(look, transPx);
+      paint(ctx, frame.trans, x, y + fontPx * 1.25, look.color, look.outlineColor, edge);
     }
     if (frame.nextText) {
-      ctx.fillStyle = "rgba(215, 220, 228, 0.45)";
-      ctx.font = "22px 'Microsoft JhengHei', 'Segoe UI', sans-serif";
-      ctx.fillText(frame.nextText, center, height * 0.86);
+      const nextPx = fontPx * look.transScale;
+      ctx.font = canvasFont(look, nextPx);
+      const fade = withAlpha(look.color, look.nextOpacity);
+      const edgeFade = withAlpha(look.outlineColor, look.nextOpacity);
+      paint(ctx, frame.nextText, x, y + fontPx * 1.25 + nextPx * 1.2, fade, edgeFade, edge);
     }
   }
 
@@ -83,11 +90,13 @@ function drawCurrent(
   frame: PreviewFrame,
   center: number,
   y: number,
+  look: LyricLook,
+  fontPx: number,
+  edge: number,
 ): void {
-  ctx.font = "42px 'Microsoft JhengHei', 'Segoe UI', sans-serif";
+  ctx.font = canvasFont(look, fontPx);
   if (!words || words.length === 0 || frame.wordIndex < 0) {
-    ctx.fillStyle = "#f3f5f8";
-    ctx.fillText(frame.text, center, y);
+    paint(ctx, frame.text, center, y, look.color, look.outlineColor, edge);
     return;
   }
   const widths = words.map((word) => ctx.measureText(word.text).width);
@@ -95,9 +104,36 @@ function drawCurrent(
   let x = center - total / 2;
   ctx.textAlign = "left";
   words.forEach((word, index) => {
-    ctx.fillStyle = index <= frame.wordIndex ? "#f0d78c" : "rgba(243,245,248,0.38)";
-    ctx.fillText(word.text, x, y);
+    const fill = index <= frame.wordIndex ? look.sungColor : withAlpha(look.color, 0.45);
+    paint(ctx, word.text, x, y, fill, look.outlineColor, edge);
     x += widths[index];
   });
   ctx.textAlign = "center";
+}
+
+function paint(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  fill: string,
+  outline: string,
+  width: number,
+): void {
+  if (width > 0) {
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = width;
+    ctx.strokeStyle = outline;
+    ctx.strokeText(text, x, y);
+  }
+  ctx.fillStyle = fill;
+  ctx.fillText(text, x, y);
+}
+
+function withAlpha(hexColor: string, alpha: number): string {
+  const value = Math.round(Math.min(1, Math.max(0, alpha)) * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `${hexColor}${value}`;
 }

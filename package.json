@@ -1,8 +1,8 @@
 {
   "name": "lyric-video",
-  "version": "0.0.0",
+  "version": "0.5.0",
   "private": true,
-  "description": "歌詞影片",
+  "description": "把同步歌詞燒進 MP4（beta 0.5）",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",

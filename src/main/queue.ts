@@ -1,7 +1,9 @@
 import { BrowserWindow } from "electron";
 import { randomBytes } from "node:crypto";
 import { describeUrl, saveDownloaded, saveLocal } from "./importService";
+import { matchProject } from "./matchLyrics";
 import { createTestClip } from "./testClip";
+import type { PickList } from "../shared/pick";
 import type { PreviewSession } from "../shared/preview";
 
 export type QueueJob = {
@@ -11,18 +13,19 @@ export type QueueJob = {
   message: string;
   projectPath?: string;
   session?: PreviewSession;
+  pick?: PickList;
 };
 
 const jobs: QueueJob[] = [];
 let pumping = false;
 
 function publish(): void {
-  const snapshot = jobs.map(({ session: _session, ...job }) => job);
+  const snapshot = jobs.map(({ session: _session, pick: _pick, ...job }) => job);
   for (const win of BrowserWindow.getAllWindows()) win.webContents.send("queue:update", snapshot);
 }
 
-export function listJobs(): Omit<QueueJob, "session">[] {
-  return jobs.map(({ session: _session, ...job }) => job);
+export function listJobs(): Omit<QueueJob, "session" | "pick">[] {
+  return jobs.map(({ session: _session, pick: _pick, ...job }) => job);
 }
 
 export function enqueueUrls(text: string): void {
@@ -63,8 +66,11 @@ export async function enqueueTest(): Promise<PreviewSession> {
   }
 }
 
-export function jobSession(id: string): PreviewSession | null {
-  return jobs.find((job) => job.id === id)?.session ?? null;
+export function openJob(id: string): { kind: "preview"; session: PreviewSession } | { kind: "pick"; session: PreviewSession; pick: PickList } | null {
+  const job = jobs.find((item) => item.id === id);
+  if (!job?.session) return null;
+  if (job.pick) return { kind: "pick", session: job.session, pick: job.pick };
+  return { kind: "preview", session: job.session };
 }
 
 async function pump(): Promise<void> {
@@ -90,10 +96,7 @@ async function pump(): Promise<void> {
         lockArtist: false,
       });
       if (!saved.ok) throw new Error(saved.error);
-      const { loadPreview } = await import("./testClip");
-      job.session = loadPreview(saved.projectPath);
-      job.projectPath = saved.projectPath;
-      job.label = probed.draft.title || job.label;
+      await finishSaved(job, saved.projectPath, probed.draft.title || job.label);
     } else {
       const described = await describeFileSafe(job.label);
       const saved = await saveLocal(job.label, {
@@ -105,13 +108,8 @@ async function pump(): Promise<void> {
         lockArtist: false,
       });
       if (!saved.ok) throw new Error(saved.error);
-      const { loadPreview } = await import("./testClip");
-      job.session = loadPreview(saved.projectPath);
-      job.projectPath = saved.projectPath;
-      job.label = job.session.title || job.label;
+      await finishSaved(job, saved.projectPath, described?.title || job.label);
     }
-    job.status = "ready";
-    job.message = "可預覽，尚未匯出";
   } catch (error) {
     job.status = "failed";
     job.message = error instanceof Error ? error.message : "失敗";
@@ -119,6 +117,16 @@ async function pump(): Promise<void> {
   pumping = false;
   publish();
   void pump();
+}
+
+async function finishSaved(job: QueueJob, projectPath: string, label: string): Promise<void> {
+  const matched = await matchProject(projectPath);
+  job.session = matched.session;
+  job.pick = matched.kind === "pick" ? matched.pick : undefined;
+  job.projectPath = projectPath;
+  job.label = label || job.label;
+  job.status = "ready";
+  job.message = matched.kind === "pick" ? "要揀歌詞" : "可預覽，尚未匯出";
 }
 
 async function describeFileSafe(filePath: string) {

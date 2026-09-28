@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { testClipLines, TEST_CLIP_MS } from "../core/preview";
 import { projectFromImport } from "../core/importPlan";
 import { parseProject, type Project } from "../core/project";
+import { clampLook, type LyricLook } from "../core/lyricLook";
 import { timingForProject } from "../core/projectTiming";
 import { testToneWav } from "../core/testTone";
 import type { TrackTiming } from "../core/timing";
@@ -39,6 +40,7 @@ export function sessionFromProject(project: Project, projectPath: string): Previ
         ...(line.trans ? { trans: line.trans } : {}),
       })),
     },
+    look: clampLook(project.style),
   };
 }
 
@@ -47,9 +49,13 @@ export function loadPreview(projectPath: string): PreviewSession {
   return sessionFromProject(project, projectPath);
 }
 
-export async function savePreviewTiming(projectPath: string, timing: TrackTiming): Promise<void> {
+export async function savePreviewTiming(projectPath: string, timing: TrackTiming, look?: LyricLook): Promise<void> {
   const project = parseProject(JSON.parse(readFileSync(projectPath, "utf8")));
   project.timing = timingForProject(timing);
+  if (look) {
+    const next = clampLook(look);
+    project.style = { ...project.style, ...next };
+  }
   await saveProject(projectPath, project);
 }
 

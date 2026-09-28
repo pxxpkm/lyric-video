@@ -1,3 +1,5 @@
+import type { LyricLook } from "../core/lyricLook";
+
 export type PreviewWord = { startMs: number; durMs: number; text: string };
 
 export type PreviewLine = {
@@ -26,6 +28,7 @@ export type PreviewSession = {
   durationMs: number;
   lines: PreviewLine[];
   timing: StoredTiming;
+  look: LyricLook;
 };
 
 export function mediaSrc(filePath: string): string {

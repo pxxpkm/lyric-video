@@ -6,3 +6,5 @@ studio-data/
 *.mp4
 *.webm
 *.log
+.vs/
+.commandcode/

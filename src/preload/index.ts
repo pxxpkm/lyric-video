@@ -8,7 +8,9 @@ contextBridge.exposeInMainWorld("lyric", {
   saveFile: (filePath: string, request: unknown) => ipcRenderer.invoke("import:save-file", filePath, request),
   createTestClip: () => ipcRenderer.invoke("preview:test-clip"),
   loadProject: (projectPath: string) => ipcRenderer.invoke("preview:load", projectPath),
-  saveTiming: (projectPath: string, timing: unknown) => ipcRenderer.invoke("preview:save", projectPath, timing),
+  saveTiming: (projectPath: string, timing: unknown, look: unknown) =>
+    ipcRenderer.invoke("preview:save", projectPath, timing, look),
+  chironFont: () => ipcRenderer.invoke("look:chiron"),
   exportVideo: (request: unknown) => ipcRenderer.invoke("export:video", request),
   onExportProgress: (callback: (text: string) => void) => {
     const listener = (_event: unknown, text: string) => callback(text);
@@ -21,6 +23,10 @@ contextBridge.exposeInMainWorld("lyric", {
   enqueueFile: (filePath: string) => ipcRenderer.invoke("queue:file", filePath),
   enqueueTest: () => ipcRenderer.invoke("queue:test"),
   openJob: (id: string) => ipcRenderer.invoke("queue:open", id),
+  matchProject: (projectPath: string) => ipcRenderer.invoke("lyric:match", projectPath),
+  browseProject: (projectPath: string, fields: unknown) => ipcRenderer.invoke("lyric:browse", projectPath, fields),
+  useCandidate: (projectPath: string, key: string, remember: boolean) =>
+    ipcRenderer.invoke("lyric:use", projectPath, key, remember),
   onQueue: (callback: (jobs: unknown) => void) => {
     const listener = (_event: unknown, jobs: unknown) => callback(jobs);
     ipcRenderer.on("queue:update", listener);

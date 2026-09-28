@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { ImportDraft, SaveRequest } from "../../shared/import";
+import type { MatchResult, PickList } from "../../shared/pick";
 import type { PreviewSession } from "../../shared/preview";
 import type { QueueJob } from "./lyric";
+import { PickSong } from "./PickSong";
 import { Preview } from "./Preview";
 
 type Source = { kind: "youtube"; url: string } | { kind: "file"; path: string } | null;
@@ -27,12 +29,12 @@ export function App() {
   const [error, setError] = useState("");
   const [savedPath, setSavedPath] = useState("");
   const [busy, setBusy] = useState(false);
-  const [screen, setScreen] = useState<"import" | "preview">("import");
+  const [screen, setScreen] = useState<"import" | "preview" | "pick">("import");
   const [showTrans, setShowTrans] = useState(true);
   const [queueText, setQueueText] = useState("");
   const [jobs, setJobs] = useState<QueueJob[]>([]);
   const [session, setSession] = useState<PreviewSession | null>(null);
-  const [savedPreview, setSavedPreview] = useState<PreviewSession | null>(null);
+  const [pick, setPick] = useState<PickList | null>(null);
 
   useEffect(() => {
     if (!window.lyric) return;
@@ -136,17 +138,8 @@ export function App() {
         return;
       }
       setSavedPath(result.projectPath);
-      setSavedPreview({
-        title,
-        artist,
-        mediaPath: result.mediaPath,
-        projectPath: result.projectPath,
-        mode,
-        durationMs: draft?.durationMs ?? 0,
-        lines: [],
-        timing: { offsetMs: 0, rate: 1, lines: {}, holds: {}, texts: {}, trans: {}, added: [] },
-      });
-      setStatus("已建立專案，尚未匯出");
+      setStatus("正在搜尋歌詞");
+      showMatch(await window.lyric.matchProject(result.projectPath));
     } catch {
       setError("下載失敗，請改拖本機檔。");
     } finally {
@@ -167,8 +160,74 @@ export function App() {
     }
   }
 
+  function showMatch(found: MatchResult | { ok: false; error: string } | null): void {
+    if (!found) return;
+    if ("ok" in found) {
+      setError(found.error);
+      return;
+    }
+    setError("");
+    setSession(found.session);
+    setSavedPath(found.session.projectPath);
+    if (found.kind === "pick") {
+      setPick(found.pick);
+      setScreen("pick");
+      setStatus(found.pick.reason || "選擇歌詞");
+      return;
+    }
+    setPick(null);
+    setScreen("preview");
+    setStatus(found.session.lines.length > 0 ? "可預覽" : "尚未有歌詞");
+  }
+
   if (screen === "preview" && session) {
-    return <Preview session={session} showTrans={showTrans} onBack={() => setScreen("import")} />;
+    return (
+      <Preview
+        session={session}
+        showTrans={showTrans}
+        onBack={() => setScreen("import")}
+        onPick={() => {
+          setBusy(true);
+          setError("");
+          void window.lyric
+            .browseProject(session.projectPath, null)
+            .then(showMatch)
+            .finally(() => setBusy(false));
+        }}
+      />
+    );
+  }
+
+  if (screen === "pick" && session && pick) {
+    return (
+      <PickSong
+        key={`${pick.reason}|${pick.hits.map((hit) => hit.key).join("|")}`}
+        pick={pick}
+        busy={busy}
+        error={error}
+        onBack={() => setScreen("import")}
+        onSkip={() => {
+          setScreen("preview");
+          setStatus(session.lines.length > 0 ? "可預覽" : "尚未有歌詞");
+        }}
+        onSearch={(fields) => {
+          setBusy(true);
+          setError("");
+          void window.lyric
+            .browseProject(session.projectPath, fields)
+            .then(showMatch)
+            .finally(() => setBusy(false));
+        }}
+        onUse={(key, remember) => {
+          setBusy(true);
+          setError("");
+          void window.lyric
+            .useCandidate(session.projectPath, key, remember)
+            .then(showMatch)
+            .finally(() => setBusy(false));
+        }}
+      />
+    );
   }
 
   return (
@@ -233,7 +292,7 @@ export function App() {
         </button>
         <button
           type="button"
-          disabled={busy || !savedPreview}
+          disabled={busy || !savedPath}
           onClick={() => {
             if (!savedPath) return;
             void window.lyric.loadProject(savedPath).then((loaded) => {
@@ -292,11 +351,7 @@ export function App() {
               className="queue-item"
               disabled={job.status !== "ready"}
               onClick={() => {
-                void window.lyric.openJob(job.id).then((loaded) => {
-                  if (!loaded) return;
-                  setSession(loaded);
-                  setScreen("preview");
-                });
+                void window.lyric.openJob(job.id).then((loaded) => showMatch(loaded));
               }}
             >
               <span>

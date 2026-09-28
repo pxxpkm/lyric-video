@@ -6,6 +6,13 @@
 
 ## 本專案已遇到
 
+### 2026-09-24 匯出用的暫存檔名以 `.part` 結尾，ffmpeg 認不出封裝格式
+
+- 現象：匯出「海奏ララバイ」時，ffmpeg 報 `Error initializing the muxer for ...\.海奏ララバイ.mp4.part: Invalid argument`，沒有成片。
+- 原因：暫存檔從 `out.part.mp4` 改成 `.${歌名}.mp4.part`。ffmpeg 用最後一段副檔名挑封裝，`part` 對不上 mp4。檔名以點開頭也容易被當成隱藏檔。
+- 對策：暫存檔是 `海奏ララバイ.part.mp4`。副檔名留在最後，檔名不以點開頭。寫完再改名成 `海奏ララバイ.mp4`。
+- 影響：M8 匯出。
+
 ### 2026-09-24 打包後匯出，ass 濾鏡被字體路徑裡的空格切斷
 
 - 現象：用 `release\win-unpacked\LyricVideo.exe` 匯出測試片，畫面停在 `Error parsing filterchain 'ass=karaoke.ass:fontsdir=C\:/Users/Leo/Lyric\ Video/release/win-unpacked/resources/fonts'`，接著打不開 `out.part.mp4`，回報 `Invalid argument`。沒有 `out.mp4`。
