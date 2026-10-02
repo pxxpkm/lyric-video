@@ -1,9 +1,59 @@
 import { describe, expect, it } from "vitest";
-import { lyricLine } from "../../src/core/lyrics";
+import { lineKey, lyricLine, type LyricLine } from "../../src/core/lyrics";
 import { defaultTiming } from "../../src/core/timing";
 import { defaultLook, fitPercent, fitUsed, playHeight, playWidth } from "../../src/core/lyricLook";
+import { setLineFade, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
 import { drawPreview } from "../../src/renderer/src/drawPreview";
+
+function alphasAt(lines: LyricLine[], mediaMs: number, clips: MotionClip[] = []): { text: string; alpha: number }[] {
+  const host = globalThis as { window?: { devicePixelRatio: number } };
+  host.window ??= { devicePixelRatio: 1 };
+  host.window.devicePixelRatio = 1;
+  const marks: { text: string; alpha: number }[] = [];
+  const ctx = {
+    font: "16px sans-serif",
+    fillStyle: "",
+    strokeStyle: "",
+    textAlign: "left",
+    textBaseline: "alphabetic",
+    globalAlpha: 1,
+    filter: "none",
+    lineJoin: "miter",
+    miterLimit: 10,
+    lineWidth: 1,
+    stack: [] as string[],
+    save() {
+      this.stack.push(this.font);
+    },
+    restore() {
+      const prev = this.stack.pop();
+      if (prev != null) this.font = prev;
+    },
+    setTransform() {},
+    clearRect() {},
+    fillRect() {},
+    translate() {},
+    rotate() {},
+    scale() {},
+    measureText(text: string) {
+      return { width: Array.from(text).length * 10 };
+    },
+    fillText(text: string) {
+      marks.push({ text, alpha: this.globalAlpha });
+    },
+    strokeText() {},
+  };
+  const canvas = {
+    clientWidth: 1920,
+    clientHeight: 1080,
+    width: 1920,
+    height: 1080,
+    getContext: () => ctx,
+  };
+  drawPreview(canvas as unknown as HTMLCanvasElement, lines, mediaMs, "audio", defaultTiming(), defaultLook, clips);
+  return marks;
+}
 
 describe("預覽字體", () => {
   it("橫排成句的原文用原文字體，譯文用譯文字體", () => {
@@ -142,5 +192,26 @@ describe("預覽字體", () => {
     expect(scales).toEqual([]);
     expect(paints.length).toBeGreaterThan(0);
     expect(paints.every((paint) => paint.font.startsWith(`${px}px "Chiron GoRound TC"`))).toBe(true);
+  });
+
+  it("句頭句尾先淡，空白畫面保持實色", () => {
+    const lines = testClipLines();
+    const head = alphasAt(lines, 1_000).filter((mark) => mark.text === "第一句");
+    const mid = alphasAt(lines, 2_000).filter((mark) => mark.text === "第一句");
+    const tail = alphasAt(lines, 2_975).filter((mark) => mark.text === "第一句");
+    expect(head.length).toBeGreaterThan(0);
+    expect(head.every((mark) => mark.alpha === 0)).toBe(true);
+    expect(mid.every((mark) => mark.alpha === 1)).toBe(true);
+    expect(tail.every((mark) => mark.alpha === 0.5)).toBe(true);
+    const transHead = alphasAt(lines, 3_000);
+    expect(transHead.filter((mark) => mark.text === "第二句").every((mark) => mark.alpha === 0)).toBe(true);
+    expect(transHead.filter((mark) => mark.text === "第二句譯文").every((mark) => mark.alpha === 0)).toBe(true);
+    const transMid = alphasAt(lines, 4_500);
+    expect(transMid.filter((mark) => mark.text === "第二句譯文").every((mark) => mark.alpha === 1)).toBe(true);
+    const empty = alphasAt([], 1_000);
+    expect(empty.filter((mark) => mark.text === "尚未有歌詞").every((mark) => mark.alpha === 1)).toBe(true);
+    const key = lineKey(lines[0]);
+    const cut = setLineFade(setLineFade([], key, "第一句", 1_000, 3_000, "in", 0), key, "第一句", 1_000, 3_000, "out", 0);
+    expect(alphasAt(lines, 1_000, cut).filter((mark) => mark.text === "第一句").every((mark) => mark.alpha === 1)).toBe(true);
   });
 });

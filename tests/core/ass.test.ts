@@ -117,9 +117,11 @@ describe("karaoke.ass", () => {
     expect(glyphs).toHaveLength(3);
     expect(glyphs.every((line) => line.includes("\\pos(") && !line.includes("\\move"))).toBe(true);
     expect(glyphs.map((line) => line.match(/\\pos\(\d+,(\d+)\)/)?.[1])).toEqual(["846", "886", "926"]);
-    const faded = setLineFade([], "1000|第一句", "第一句", 1000, 3000, "in", 1);
+    const faded = setLineFade([], "1000|第一句", "第一句", 1000, 3000, "in", 400);
     const fadeOnly = buildKaraokeAss(testClipLines(), undefined, defaultLook, faded);
-    expect(fadeOnly).toContain("\\fade");
+    const fadedOrig = fadeOnly.split("\n").find((line) => line.includes("第一句") && line.includes(",Orig,"));
+    expect(fadedOrig).toContain("\\fad(400,50)");
+    expect(fadedOrig).not.toContain("\\fade");
     expect(fadeOnly).not.toContain("\\move");
   });
 
@@ -168,9 +170,12 @@ describe("karaoke.ass", () => {
       ],
     });
     expect(parsed.motion[0].preset).toBeUndefined();
+    expect(parsed.motion[0].fadeInMs).toBeUndefined();
     const ass = buildKaraokeAss(testClipLines(), undefined, defaultLook, parsed.motion);
-    expect(ass).toContain("\\fade");
-    expect(ass).toContain("\\pos(");
+    const row = ass.split("\n").find((line) => line.startsWith("Dialogue: 0,0:00:01.00,") && line.includes(",Orig,"));
+    expect(row).toContain("\\fad(50,50)");
+    expect(row).not.toContain("\\fade");
+    expect(row).toContain("\\pos(");
     expect(ass).not.toContain("\\move");
   });
 
@@ -504,6 +509,43 @@ describe("karaoke.ass", () => {
     expect(short).toContain("\\pos(960,846)");
     expect(short).toContain("\\pos(960,886)");
     expect(short).toContain("\\pos(960,926)");
+  });
+
+  it("句頭句尾淡入淡出，短句自動縮，小點唔跟", () => {
+    const plain = buildKaraokeAss(testClipLines());
+    const first = plain.split("\n").find((row) => row.startsWith("Dialogue: 0,0:00:01.00,") && row.includes(",Orig,"));
+    const second = plain.split("\n").find((row) => row.includes("第二句譯文"));
+    expect(first).toContain("\\fad(50,50)");
+    expect(second).toContain("\\fad(50,50)");
+    expect(first).not.toContain("\\fade");
+    const cut = setLineFade([], "1000|第一句", "第一句", 1000, 3000, "in", 0);
+    const hard = setLineFade(cut, "1000|第一句", "第一句", 1000, 3000, "out", 0);
+    const cutAss = buildKaraokeAss(testClipLines(), undefined, defaultLook, hard);
+    const cutRow = cutAss.split("\n").find((row) => row.startsWith("Dialogue: 0,0:00:01.00,") && row.includes(",Orig,"));
+    expect(cutRow).not.toContain("\\fad");
+    expect(cutRow).not.toContain("\\fade");
+    const brief = lyricLine(1_000, "短句", { translatedText: "短譯" });
+    const next = lyricLine(1_160, "下一句");
+    const short = buildKaraokeAss([brief, next]);
+    const shortOrig = short.split("\n").find((row) => row.includes("短句") && row.includes(",Orig,"));
+    const shortTrans = short.split("\n").find((row) => row.includes("短譯"));
+    expect(shortOrig).toContain("\\fad(40,40)");
+    expect(shortTrans).toContain("\\fad(40,40)");
+    const upright = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40 });
+    const glyphs = upright.split("\n").filter((row) => row.endsWith("第") || row.endsWith("一") || row.endsWith("句"));
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(glyphs.every((row) => row.includes("\\fad(50,50)"))).toBe(true);
+    const dusty = buildKaraokeAss(testClipLines(), undefined, defaultLook, [
+      presetClip("1000|第一句", "第一句", 1000, 3000, "dust"),
+    ]);
+    const lyric = dusty.split("\n").find((row) => row.includes("第一句") && !row.includes("●"));
+    const dots = dusty.split("\n").filter((row) => row.includes("●"));
+    expect(lyric).toContain("\\fad(50,50)");
+    expect(dots.length).toBeGreaterThan(0);
+    expect(dots.every((row) => !row.includes("\\fad(") && row.includes("\\fade(255,"))).toBe(true);
+    const soft = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, soft: true });
+    const softRow = soft.split("\n").find((row) => row.startsWith("Dialogue: 0,0:00:01.00,") && row.includes(",Orig,"));
+    expect(softRow).toContain(`\\fad(50,50)\\blur${softBlur}`);
   });
 
   it("正的延遲讓字幕晚出現", () => {

@@ -69,7 +69,7 @@ export function buildKaraokeAss(
       const wordTimed = pieces.some((piece) => piece.cs != null);
       const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
       const origFit = fitPercent(Array.from(line.text).length, look.size, look.tracking, look.outline, restX(look, clip), playWidth);
-      const lead = clip ? withBlur(assMotion(clip, look, start, end, tint, origFit), look) : place(look, origFit);
+      const lead = clip ? withBlur(assMotion(clip, look, start, end, tint, origFit), look) : place(look, origFit, start, end);
       events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look, clip?.preset === "edge")}`));
       pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size, fitUsed(origFit));
       const trans = line.translatedText?.trim();
@@ -79,7 +79,7 @@ export function buildKaraokeAss(
         const body = withBlur(
           clip
             ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "", transFit)
-            : posTag(at.x, at.y, "", transFit),
+            : posTag(at.x, at.y, assFadeTag(undefined, start, end), transFit),
           look,
         );
         const transText = clip?.preset === "edge" ? edgeBody(trans, look.outlineColor, look.sungColor) : escapeAss(trans);
@@ -175,7 +175,7 @@ function verticalEvents(
 ): string[] {
   const anchor = anchorPx(look, clip);
   const transAt = transAnchorPx(look, clip);
-  const fade = clip ? assFadeTag(clip, start, end) : "";
+  const fade = assFadeTag(clip, start, end);
   const span = end - start;
   const glyphs = stackGlyphs(pieces);
   const edged = clip?.preset === "edge";
@@ -329,12 +329,13 @@ function escapeAss(text: string): string {
   return text.replaceAll("\\", "\\\\").replaceAll("{", "\\{").replaceAll("}", "\\}").replaceAll("\n", "\\N");
 }
 
-function place(look: LyricLook, fit = 100): string {
+function place(look: LyricLook, fit: number, startMs: number, endMs: number): string {
   const x = Math.round(look.x * playWidth);
   const y = Math.round(look.y * playHeight);
   const size = assFontSize(look.size, look.font);
+  const fade = assFadeTag(undefined, startMs, endMs);
   const blur = look.soft ? `\\blur${softBlur}` : "";
-  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}${fitWidthTag(fit)}${blur}}`;
+  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}${fitWidthTag(fit)}${fade}${blur}}`;
 }
 
 function withBlur(tag: string, look: LyricLook): string {

@@ -4,6 +4,8 @@ import type { LyricLook } from "../../core/lyricLook";
 import {
   clearLineMotion,
   clearLineMotions,
+  edgeFadeMs,
+  fadeRequest,
   mediaSpans,
   setLineFade,
   setLinePreset,
@@ -60,8 +62,8 @@ export function ShapePanel({
   );
   const span = selected ? spans.get(lineKey(selected)) : undefined;
   const lineClip = selected ? clips.find((clip) => clip.lineKey === lineKey(selected)) : undefined;
-  const fadeIn = allOn ? sharedFade(clips, targets, "in") : lineClip ? 1 - lineClip.enter.opacity : 0;
-  const fadeOut = allOn ? sharedFade(clips, targets, "out") : lineClip ? 1 - lineClip.leave.opacity : 0;
+  const fadeIn = allOn ? sharedFade(clips, targets, "in") : fadeRequest(lineClip, "in");
+  const fadeOut = allOn ? sharedFade(clips, targets, "out") : fadeRequest(lineClip, "out");
   const preset = allOn ? sharedPreset(clips, targets) : (lineClip?.preset ?? null);
   const canPlace = allOn ? targets.length > 0 : selected != null && span != null;
   const canClear = allOn ? targets.some((line) => clips.some((clip) => clip.lineKey === line.lineKey)) : lineClip != null;
@@ -98,7 +100,7 @@ export function ShapePanel({
         <LyricLookPanel look={look} onChange={onLook} />
       </Fold>
       <Fold title="效果" initial>
-        <p className="meta span">揀一句再改淡入淡出同預設，或者撳全選一齊改。位置用上面的字體，或者喺預覽拖。這裡不改時間。</p>
+        <p className="meta span">揀一句再改句頭句尾的淡入淡出同預設，或者撳全選一齊改。位置用上面的字體，或者喺預覽拖。這裡不改時間。</p>
         <div className="span">
           <LineList
             lines={shown}
@@ -157,8 +159,8 @@ export function ShapePanel({
             : "飛入由下移上。放大、擺正同變色都喺句頭。漸邊沿住成句改裙邊色。微塵、光斑、弧線沿住成句，小點細啲而且錯開。預設會燒進入面。"}
         </p>
         <div className="row span">
-          <Range label="淡入" min={0} max={1} value={fadeIn} disabled={!canPlace} onChange={(amount) => fadeLine("in", amount)} />
-          <Range label="淡出" min={0} max={1} value={fadeOut} disabled={!canPlace} onChange={(amount) => fadeLine("out", amount)} />
+          <Range label="淡入" min={0} max={800} step={10} value={fadeIn} disabled={!canPlace} onChange={(amount) => fadeLine("in", amount)} />
+          <Range label="淡出" min={0} max={800} step={10} value={fadeOut} disabled={!canPlace} onChange={(amount) => fadeLine("out", amount)} />
           <button
             type="button"
             className="tiny"
@@ -169,7 +171,7 @@ export function ShapePanel({
             跟字體
           </button>
         </div>
-        <p className="meta span">淡入、淡出拉高就更淡。預設唔改位置。</p>
+        <p className="meta span">0 係直接切換。50 係句頭句尾各淡一截，中間保持清楚。</p>
       </Fold>
     </div>
   );
@@ -187,14 +189,10 @@ function sharedFade(
   lines: { lineKey: string }[],
   edge: "in" | "out",
 ): number {
-  if (lines.length === 0) return 0;
-  const amounts = lines.map((line) => {
-    const clip = clips.find((item) => item.lineKey === line.lineKey);
-    const opacity = edge === "in" ? (clip?.enter.opacity ?? 1) : (clip?.leave.opacity ?? 1);
-    return 1 - opacity;
-  });
+  if (lines.length === 0) return edgeFadeMs;
+  const amounts = lines.map((line) => fadeRequest(clips.find((item) => item.lineKey === line.lineKey), edge));
   const first = amounts[0];
-  return amounts.every((amount) => Math.abs(amount - first) < 0.001) ? first : 0;
+  return amounts.every((amount) => amount === first) ? first : edgeFadeMs;
 }
 
 function Fold({ title, initial = false, children }: { title: string; initial?: boolean; children: ReactNode }) {

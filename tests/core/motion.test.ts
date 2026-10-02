@@ -19,6 +19,7 @@ import {
   decorDots,
   decorMoveWindow,
   decorLayout,
+  edgeFade,
   sampleClip,
   sampleDecor,
   setLineFade,
@@ -43,7 +44,7 @@ const clip: MotionClip = {
 };
 
 describe("片段運動", () => {
-  it("位置固定，透明度仍可在頭尾之間過渡", () => {
+  it("位置固定，句頭句尾先淡，中間清楚", () => {
     const start = sampleClip(clip, 0, look);
     expect(start.x).toBeCloseTo(0.2);
     expect(start.y).toBeCloseTo(0.8);
@@ -51,25 +52,34 @@ describe("片段運動", () => {
     const mid = sampleClip(clip, 500, look);
     expect(mid.x).toBeCloseTo(0.2);
     expect(mid.y).toBeCloseTo(0.8);
-    expect(mid.opacity).toBeCloseTo(0.5);
+    expect(mid.opacity).toBe(1);
+    expect(sampleClip(clip, 50, look).opacity).toBe(1);
+    expect(sampleClip(clip, 950, look).opacity).toBe(1);
+    expect(sampleClip(clip, 975, look).opacity).toBeCloseTo(0.5);
     const end = sampleClip(clip, 1000, look);
     expect(end.x).toBeCloseTo(0.2);
     expect(end.y).toBeCloseTo(0.8);
-    expect(end.opacity).toBe(1);
+    expect(end.opacity).toBe(0);
   });
 
-  it("位置不同也不寫移動，只在透明度有變時淡入", () => {
+  it("位置不同也不寫移動，句頭句尾用 \\fad", () => {
     expect(assMotion(clip, look)).toContain("\\pos(384,864)");
     expect(assMotion(clip, look)).not.toContain("\\move");
-    expect(assMotion(clip, look)).toContain("\\fade(255,0,0,0,1000,1000,1000)");
+    expect(assMotion(clip, look)).toContain("\\fad(50,50)");
+    expect(assMotion(clip, look)).not.toContain("\\fade");
     const still = {
       ...clip,
       enter: { x: -0.3, y: -0.02, opacity: 1 },
       leave: { x: -0.3, y: -0.02, opacity: 1 },
     };
-    expect(assMotion(still, look)).toContain("\\pos(384,864)");
-    expect(assMotion(still, look)).not.toContain("\\move");
-    expect(assMotion(still, look)).not.toContain("\\fade");
+    expect(assMotion(still, look)).toContain("\\fad(50,50)");
+    const cut = { ...still, fadeInMs: 0, fadeOutMs: 0 };
+    expect(assMotion(cut, look)).not.toContain("\\fad");
+    expect(assMotion(cut, look)).not.toContain("\\fade");
+    expect(edgeFade(undefined, 1000)).toEqual({ inMs: 50, outMs: 50 });
+    expect(edgeFade(undefined, 160)).toEqual({ inMs: 40, outMs: 40 });
+    expect(edgeFade(undefined, 0)).toEqual({ inMs: 0, outMs: 0 });
+    expect(edgeFade({ ...clip, fadeInMs: 800, fadeOutMs: 0 }, 1000)).toEqual({ inMs: 250, outMs: 0 });
   });
 
   it("拖動只改這一句，記住同成首的距離", () => {
@@ -96,14 +106,20 @@ describe("片段運動", () => {
 
   it("淡入淡出不帶動位置，之後仍跟成首", () => {
     const placed = placeLineClip([], "1000|第一句", "第一句", 0, 1000, 0.3, 0.4, look);
-    const faded = setLineFade(placed, "1000|第一句", "第一句", 0, 1000, "out", 1);
+    const faded = setLineFade(placed, "1000|第一句", "第一句", 0, 1000, "out", 400);
     expect(faded[0].enter.x).toBeCloseTo(placed[0].enter.x);
+    expect(faded[0].enter.opacity).toBe(1);
+    expect(faded[0].fadeOutMs).toBe(400);
+    expect(faded[0].fadeInMs).toBeUndefined();
+    expect(sampleClip(faded[0], 500, look).opacity).toBe(1);
     expect(sampleClip(faded[0], 1000, look)).toMatchObject({ x: 0.3, y: 0.4, opacity: 0 });
-    const fresh = setLineFade([], "1000|第一句", "第一句", 0, 1000, "in", 1);
-    expect(fresh[0].enter).toMatchObject({ x: 0, y: 0, opacity: 0 });
-    expect(sampleClip(fresh[0], 0, look)).toMatchObject({ x: look.x, y: look.y, opacity: 0 });
+    const fresh = setLineFade([], "1000|第一句", "第一句", 0, 1000, "in", 0);
+    expect(fresh[0].enter).toMatchObject({ x: 0, y: 0, opacity: 1 });
+    expect(fresh[0].fadeInMs).toBe(0);
+    expect(fresh[0].fadeOutMs).toBeUndefined();
+    expect(sampleClip(fresh[0], 0, look)).toMatchObject({ x: look.x, y: look.y, opacity: 1 });
     expect(sampleClip(fresh[0], 0, { x: 0.6, y: 0.7 }).x).toBeCloseTo(0.6);
-    expect(assMotion(fresh[0], look)).toContain("\\pos(");
+    expect(assMotion(fresh[0], look)).toContain("\\fad(0,50)");
     expect(assMotion(fresh[0], look)).not.toContain("\\move");
   });
 
@@ -144,9 +160,18 @@ describe("片段運動", () => {
     expect(clip.leave.x).toBeCloseTo(clip.enter.x);
     expect(clip.leave.y).toBeCloseTo(clip.enter.y);
     expect(clip.leave.opacity).toBe(0.25);
+    expect(clip.fadeInMs).toBeUndefined();
     expect(clip.trans?.x).toBeCloseTo(clip.enter.x);
     expect(clip.trans?.y).toBeCloseTo(clip.enter.y);
-    expect(sampleClip(clip, 0, raw.style)).toMatchObject({ x: 0.2, y: 0.7, opacity: 1 });
+    expect(sampleClip(clip, 0, raw.style)).toMatchObject({ x: 0.2, y: 0.7, opacity: 0 });
+    expect(sampleClip(clip, 500, raw.style).opacity).toBe(1);
+    const cut = parseProject({
+      ...raw,
+      motion: [{ ...parsed.motion[0], fadeInMs: 0, fadeOutMs: 0 }],
+    });
+    expect(cut.motion[0].fadeInMs).toBe(0);
+    expect(cut.motion[0].fadeOutMs).toBe(0);
+    expect(sampleClip(cut.motion[0], 0, raw.style).opacity).toBe(1);
     const again = parseProject({ ...raw, motion: parsed.motion });
     expect(again.motion[0].enter.x).toBeCloseTo(clip.enter.x);
     expect(again.motion[0].enter.y).toBeCloseTo(clip.enter.y);
@@ -163,12 +188,13 @@ describe("片段運動", () => {
         { lineKey: "c", text: "丙", startMs: 2000, endMs: 3000 },
       ],
       "in",
-      1,
+      400,
     );
     expect(faded).toHaveLength(3);
     for (const key of ["a", "b", "c"]) {
       const clip = faded.find((item) => item.lineKey === key);
-      expect(clip?.enter.opacity).toBe(0);
+      expect(clip?.fadeInMs).toBe(400);
+      expect(clip?.enter.opacity).toBe(1);
     }
     expect(faded[0].enter.x).toBeCloseTo(both[0].enter.x);
     expect(faded[1].enter.y).toBeCloseTo(both[1].enter.y);
@@ -258,16 +284,19 @@ describe("片段運動", () => {
     const next = setLinePreset([], "a", "甲", 0, 1000, "fly");
     expect(next[0].preset).toBe("fly");
     expect(next[0].trans).toEqual({ x: 0, y: 0 });
-    const faded = setLineFade(next, "a", "甲", 0, 1000, "in", 1);
+    const faded = setLineFade(next, "a", "甲", 0, 1000, "in", 400);
     expect(faded[0].preset).toBe("fly");
-    expect(faded[0].enter.opacity).toBe(0);
+    expect(faded[0].enter.opacity).toBe(1);
+    expect(faded[0].fadeInMs).toBe(400);
     const placed = placeLineClip(faded, "a", "甲", 0, 1000, 0.2, 0.8, look);
     expect(placed[0].preset).toBe("fly");
+    expect(placed[0].fadeInMs).toBe(400);
     expect(sampleClip(placed[0], 1000, look).x).toBeCloseTo(0.2);
     const none = setLinePreset(placed, "a", "甲", 0, 1000, null);
     expect(none[0].preset).toBeUndefined();
-    expect(none[0].enter.opacity).toBe(0);
-    expect(assMotion(none[0], look)).toContain("\\fade");
+    expect(none[0].fadeInMs).toBe(400);
+    expect(assMotion(none[0], look)).toContain("\\fad(250,50)");
+    expect(assMotion(none[0], look)).not.toContain("\\fade");
     expect(assMotion(none[0], look)).not.toContain("\\move");
     expect(clearLineMotion(placed, "a")).toEqual([]);
     const all = setLinesPreset(

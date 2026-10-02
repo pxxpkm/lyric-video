@@ -32,6 +32,10 @@ export type MotionClip = {
   /** 譯文相對成首譯文位置的偏移。沒有就跟原文偏移，舊檔先係咁。 */
   trans?: { x: number; y: number };
   preset?: LinePreset;
+  /** 句頭淡入毫秒。沒有就用 50。0 係直接切換，要寫低。 */
+  fadeInMs?: number;
+  /** 句尾淡出毫秒。沒有就用 50。0 係直接切換，要寫低。 */
+  fadeOutMs?: number;
 };
 
 export type Placed = { x: number; y: number; opacity: number; scale: number; deg: number; tint: number };
@@ -145,6 +149,42 @@ export function samplePose(preset: LinePreset | undefined, mediaMs: number, star
   return rest;
 }
 
+/** 未寫過的邊係 50。寫低 0 先至係直接切換。 */
+export const edgeFadeMs = 50;
+export const edgeFadeMax = 800;
+
+export function fadeRequest(clip: MotionClip | undefined, edge: "in" | "out"): number {
+  const raw = edge === "in" ? clip?.fadeInMs : clip?.fadeOutMs;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return edgeFadeMs;
+  return Math.round(Math.min(edgeFadeMax, Math.max(0, raw)));
+}
+
+/** 每邊唔超過句長四分之一，兩邊加埋最多半句，中間先至保持清楚。 */
+export function edgeFade(clip: MotionClip | undefined, spanMs: number): { inMs: number; outMs: number } {
+  const cap = Math.floor(Math.max(0, spanMs) / 4);
+  return {
+    inMs: Math.min(fadeRequest(clip, "in"), cap),
+    outMs: Math.min(fadeRequest(clip, "out"), cap),
+  };
+}
+
+export function edgeOpacity(clip: MotionClip | undefined, mediaMs: number, startMs: number, endMs: number): number {
+  const span = endMs - startMs;
+  if (!(span > 0)) return 1;
+  const faded = edgeFade(clip, span);
+  const elapsed = mediaMs - startMs;
+  if (faded.inMs > 0 && elapsed < faded.inMs) return Math.max(0, elapsed / faded.inMs);
+  if (faded.outMs > 0 && elapsed > span - faded.outMs) return Math.max(0, (endMs - mediaMs) / faded.outMs);
+  return 1;
+}
+
+/** 句頭句尾的 \\fad。舊的成句 \\fade 唔再寫。兩邊都係 0 就唔寫。 */
+export function assFadeTag(clip: MotionClip | undefined, startMs: number, endMs: number): string {
+  const faded = edgeFade(clip, endMs - startMs);
+  if (faded.inMs === 0 && faded.outMs === 0) return "";
+  return `\\fad(${faded.inMs},${faded.outMs})`;
+}
+
 export function sampleClip(
   clip: MotionClip,
   mediaMs: number,
@@ -152,24 +192,15 @@ export function sampleClip(
   startMs = clip.startMs,
   endMs = clip.endMs,
 ): Placed {
-  const span = Math.max(1, endMs - startMs);
-  const t = Math.min(1, Math.max(0, (mediaMs - startMs) / span));
   const pose = samplePose(clip.preset, mediaMs, startMs, endMs);
   return {
     x: look.x + clip.enter.x,
     y: look.y + clip.enter.y + pose.dy,
-    opacity: lerp(clip.enter.opacity, clip.leave.opacity, t),
+    opacity: edgeOpacity(clip, mediaMs, startMs, endMs),
     scale: pose.scale,
     deg: pose.deg,
     tint: pose.tint,
   };
-}
-
-export function assFadeTag(clip: MotionClip, startMs = clip.startMs, endMs = clip.endMs): string {
-  const dur = Math.max(0, Math.round(endMs - startMs));
-  const a0 = assAlpha(clip.enter.opacity);
-  const a1 = assAlpha(clip.leave.opacity);
-  return a0 === 0 && a1 === 0 ? "" : `\\fade(${a0},${a1},${a1},0,${dur},${dur},${dur})`;
 }
 
 /** 定位上的預設標籤。飛入只寫 \move，唔再加 \pos。變色由呼叫端決定加唔加。fit 係橫排收窄的百分比，100 就唔寫。 */
@@ -475,19 +506,21 @@ export function setLineFade(
   edge: "in" | "out",
   amount: number,
 ): MotionClip[] {
-  const opacity = 1 - clamp01(amount);
+  const ms = clampFadeMs(amount);
   const existing = clips.find((clip) => clip.lineKey === lineKey);
   if (!existing) {
     const frame = { x: 0, y: 0, opacity: 1 };
-    const enter = { ...frame, opacity: edge === "in" ? opacity : 1 };
-    const leave = { ...frame, opacity: edge === "out" ? opacity : 1 };
-    return [...clips, { ...lineClip(lineKey, text, startMs, endMs, enter, leave), trans: { x: 0, y: 0 } }];
+    const next: MotionClip = { ...lineClip(lineKey, text, startMs, endMs, frame, { ...frame }), trans: { x: 0, y: 0 } };
+    if (edge === "in") next.fadeInMs = ms;
+    else next.fadeOutMs = ms;
+    return [...clips, next];
   }
   return clips.map((clip) => {
     if (clip.lineKey !== lineKey) return clip;
-    return edge === "in"
-      ? { ...clip, text, startMs, endMs, enter: { ...clip.enter, opacity } }
-      : { ...clip, text, startMs, endMs, leave: { ...clip.leave, opacity } };
+    const next = { ...clip, text, startMs, endMs };
+    if (edge === "in") next.fadeInMs = ms;
+    else next.fadeOutMs = ms;
+    return next;
   });
 }
 
@@ -629,17 +662,13 @@ function lineClip(
   return { id: `line:${lineKey}`, text, startMs, endMs, lineKey, enter, leave, locked: true, basis: "look" };
 }
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
 function assAlpha(opacity: number): number {
   return Math.round((1 - Math.min(1, Math.max(0, opacity))) * 255);
 }
 
-function clamp01(value: number): number {
+function clampFadeMs(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.min(1, Math.max(0, value));
+  return Math.round(Math.min(edgeFadeMax, Math.max(0, value)));
 }
 
 function clampX(value: number): number {

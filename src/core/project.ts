@@ -66,6 +66,8 @@ export const projectSchema = z.object({
           basis: z.literal("look").optional(),
           trans: z.object({ x: z.number(), y: z.number() }).optional(),
           preset: z.preprocess((value) => knownPreset(value), z.enum(linePresetNames).optional()),
+          fadeInMs: z.number().optional(),
+          fadeOutMs: z.number().optional(),
         })
         .transform((clip) => ({ ...clip, locked: clip.locked ?? true })),
     )

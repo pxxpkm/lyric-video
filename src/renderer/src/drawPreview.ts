@@ -15,6 +15,7 @@ import {
   type LyricLook,
 } from "../../core/lyricLook";
 import {
+  edgeOpacity,
   isDecor,
   lyricBands,
   mediaSpans,
@@ -236,8 +237,18 @@ function linePlacement(
   timing: TrackTiming,
 ): Placed {
   const bound = clips.find((clip) => clip.lineKey && clip.lineKey === key);
-  const span = bound ? mediaSpans(shown, timing).get(key) : undefined;
-  if (!bound) return { x: look.x, y: look.y, opacity: 1, scale: 1, deg: 0, tint: 0 };
+  const span = key ? mediaSpans(shown, timing).get(key) : undefined;
+  if (!bound) {
+    if (!span) return { x: look.x, y: look.y, opacity: 1, scale: 1, deg: 0, tint: 0 };
+    return {
+      x: look.x,
+      y: look.y,
+      opacity: edgeOpacity(undefined, mediaMs, span.startMs, span.endMs),
+      scale: 1,
+      deg: 0,
+      tint: 0,
+    };
+  }
   return sampleClip(bound, mediaMs, look, span?.startMs ?? bound.startMs, span?.endMs ?? bound.endMs);
 }
 
