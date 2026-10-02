@@ -34,6 +34,12 @@ export type LyricLook = {
 /** 1080 畫面的高斯模糊。參考檔喺 720p 用 4，呢度用較輕的 1.5，避免同裙邊疊到發糊。 */
 export const softBlur = 1.5;
 
+/** 同樣式邊距一樣。收窄留呢條白邊，字先至唔貼住畫面。 */
+export const frameEdge = 40;
+
+export const playWidth = 1920;
+export const playHeight = 1080;
+
 /** 舊檔只有譯文比例、未有譯文字級時用。64 × 0.56 = 36。 */
 const legacyTransScale = 0.56;
 
@@ -107,6 +113,53 @@ export function letterGap(tracking: number | undefined): number {
 /** 直排字柱每隻字的步進。字距 0 就等於字級。 */
 export function glyphStep(size: number, tracking: number | undefined): number {
   return size + letterGap(tracking);
+}
+
+/** 一行字墨加兩側裙邊。橫排直排同一個數，唔用量度，預覽同匯出先至同一比例。 */
+export function lineInk(count: number, size: number, tracking: number | undefined, outline: number): number {
+  const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  if (n <= 0) return 0;
+  const body = Number.isFinite(size) && size > 0 ? size : 0;
+  const edge = Number.isFinite(outline) && outline > 0 ? outline : 0;
+  return n * body + Math.max(0, n - 1) * letterGap(tracking) + edge * 2;
+}
+
+/** 定位兩邊較短嗰邊，減邊距再乘二。拖離中間，兩頭都仲喺畫面入面。 */
+export function frameRoom(anchor: number, frame: number, margin = frameEdge): number {
+  const span = Number.isFinite(frame) && frame > 0 ? frame : 1;
+  const pos = unit(anchor) * span;
+  const pad = Number.isFinite(margin) ? margin : frameEdge;
+  return Math.max(1, (Math.min(pos, span - pos) - pad) * 2);
+}
+
+/**
+ * 100 表示放得落，唔使收。否則向下取整，避免四捨五入之後仍然超出。
+ * 橫排用畫面闊，直排用畫面高。
+ */
+export function fitPercent(
+  count: number,
+  size: number,
+  tracking: number | undefined,
+  outline: number,
+  anchor: number,
+  frame: number,
+): number {
+  const ink = lineInk(count, size, tracking, outline);
+  const room = frameRoom(anchor, frame);
+  if (!(ink > room)) return 100;
+  return Math.max(1, Math.floor((room / ink) * 100));
+}
+
+/** 收窄比例。100 就係 1，短句的位置同字級先至唔會偏移。 */
+export function fitUsed(percent: number): number {
+  if (!Number.isFinite(percent) || percent >= 100) return 1;
+  return Math.max(1, Math.floor(percent)) / 100;
+}
+
+/** 橫排只縮闊度。100 就唔寫標籤，輸出先至同未收窄一樣。 */
+export function fitWidthTag(percent: number): string {
+  if (!Number.isFinite(percent) || percent >= 100) return "";
+  return `\\fscx${Math.max(1, Math.floor(percent))}`;
 }
 
 export function resolvedTransColor(color: string | undefined, transColor: string | undefined): string {
@@ -205,6 +258,11 @@ export function isVerticalFlow(flow: string | undefined): boolean {
 
 function flowOf(value: string | undefined): LyricFlow {
   return isVerticalFlow(value) ? "vertical" : "horizontal";
+}
+
+function unit(value: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0.5;
+  return Math.min(1, Math.max(0, value));
 }
 
 function clamp(value: number | undefined, min: number, max: number, fallback: number): number {

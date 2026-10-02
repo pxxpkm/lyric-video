@@ -1,6 +1,19 @@
 import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/preview";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
-import { canvasFont, defaultLook, edgeOutlineAt, isVerticalFlow, letterGap, mixHex, softBlur, type LyricLook } from "../../core/lyricLook";
+import {
+  canvasFont,
+  defaultLook,
+  edgeOutlineAt,
+  fitPercent,
+  fitUsed,
+  isVerticalFlow,
+  letterGap,
+  mixHex,
+  playHeight,
+  playWidth,
+  softBlur,
+  type LyricLook,
+} from "../../core/lyricLook";
 import {
   isDecor,
   lyricBands,
@@ -10,6 +23,7 @@ import {
   decorLayout,
   sampleDecor,
   sampleTrans,
+  transOffset,
   verticalColumns,
   DECOR_MARK,
   type MotionClip,
@@ -96,13 +110,17 @@ export function drawPreview(
   const y = placed.y * height;
   const transX = translated.x * width;
   const transY = translated.y * height;
+  const upright = isVerticalFlow(look.flow);
+  const rest = restAnchors(clips, frame.key, look);
+  const origUsed = frame.text ? fitted(frame.text, look.size, look, upright ? rest.y : rest.x, upright) : 1;
+  const transUsed = frame.trans ? fitted(frame.trans, look.transSize, look, upright ? rest.transY : rest.transX, upright) : 1;
   ctx.save();
   ctx.globalAlpha = placed.opacity;
   if (frame.text && look.soft) ctx.filter = `blur(${softBlur * scale}px)`;
   if (!frame.text) {
     ctx.font = canvasFont(look, Math.max(16, fontPx * 0.7));
     paint(ctx, "尚未有歌詞", x, y, look.color, look.outlineColor, edge);
-  } else if (isVerticalFlow(look.flow)) {
+  } else if (upright) {
     const words = shown[frame.index]?.words ?? null;
     const glyphs = mainGlyphs(words, frame, look);
     const bands = verticalColumns(
@@ -118,14 +136,16 @@ export function drawPreview(
       },
       trackPx(look, scale),
     );
-    drawColumn(ctx, glyphs, bands.main, look, fontPx, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint, look.outlineColor, edged);
+    scaleColumn(bands.main, origUsed);
+    scaleColumn(bands.trans, transUsed);
+    drawColumn(ctx, glyphs, bands.main, look, fontPx * origUsed, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint, look.outlineColor, edged);
     if (frame.trans && bands.trans) {
       drawColumn(
         ctx,
         Array.from(frame.trans).map((ch) => ({ ch, fill: look.transColor })),
         bands.trans,
         look,
-        transPx,
+        transPx * transUsed,
         edge,
         translated,
         translated.tint,
@@ -142,39 +162,43 @@ export function drawPreview(
     withPose(ctx, x, y, placed, () => {
       // 量度譯文寬度會改 ctx.font。成句原文唔會自己設字體，要先設回原文。
       ctx.font = canvasFont(look, fontPx);
-      if (gap > 0) drawTracked(ctx, words, frame, x, y, look, fontPx, edge, gap, edged, placed.tint);
-      else if (edged) drawEdged(ctx, words, frame, x, y, look, fontPx, edge);
-      else if (hasKaraoke(words, frame)) drawCurrent(ctx, words, frame, x, y, look, fontPx, edge);
-      else paint(ctx, frame.text, x, y, mixHex(look.color, look.sungColor, placed.tint), look.outlineColor, edge);
+      squeeze(ctx, x, y, origUsed, () => {
+        if (gap > 0) drawTracked(ctx, words, frame, x, y, look, fontPx, edge, gap, edged, placed.tint);
+        else if (edged) drawEdged(ctx, words, frame, x, y, look, fontPx, edge);
+        else if (hasKaraoke(words, frame)) drawCurrent(ctx, words, frame, x, y, look, fontPx, edge);
+        else paint(ctx, frame.text, x, y, mixHex(look.color, look.sungColor, placed.tint), look.outlineColor, edge);
+      });
     });
     if (frame.trans && bands?.trans) {
       const at = bands.trans;
       withPose(ctx, at.x, at.y, translated, () => {
         ctx.font = canvasFont(look, transPx, look.transFont);
         const fill = mixHex(look.transColor, look.sungColor, translated.tint);
-        if (gap > 0) {
-          paintRun(
-            ctx,
-            Array.from(frame.trans).map((ch) => ({ ch, fill })),
-            at.x,
-            at.y,
-            edge,
-            look,
-            gap,
-            edged,
-          );
-        } else if (edged) {
-          paintRun(
-            ctx,
-            Array.from(frame.trans).map((ch) => ({ ch, fill })),
-            at.x,
-            at.y,
-            edge,
-            look,
-          );
-        } else {
-          paint(ctx, frame.trans, at.x, at.y, fill, look.outlineColor, edge);
-        }
+        squeeze(ctx, at.x, at.y, transUsed, () => {
+          if (gap > 0) {
+            paintRun(
+              ctx,
+              Array.from(frame.trans).map((ch) => ({ ch, fill })),
+              at.x,
+              at.y,
+              edge,
+              look,
+              gap,
+              edged,
+            );
+          } else if (edged) {
+            paintRun(
+              ctx,
+              Array.from(frame.trans).map((ch) => ({ ch, fill })),
+              at.x,
+              at.y,
+              edge,
+              look,
+            );
+          } else {
+            paint(ctx, frame.trans, at.x, at.y, fill, look.outlineColor, edge);
+          }
+        });
       });
     }
   }
@@ -182,8 +206,7 @@ export function drawPreview(
   const span = mediaSpans(shown, timing).get(frame.key);
   const preset = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset;
   if (frame.text && span && isDecor(preset)) {
-    const vertical = isVerticalFlow(look.flow);
-    drawDecor(ctx, x, y, preset, mediaMs, span.startMs, span.endMs, scale, look.color, look, decorLayout(frame.text, look.size, vertical));
+    drawDecor(ctx, x, y, preset, mediaMs, span.startMs, span.endMs, scale, look.color, look, decorLayout(frame.text, look.size, upright, origUsed));
     if (frame.trans) {
       drawDecor(
         ctx,
@@ -196,7 +219,7 @@ export function drawPreview(
         scale,
         look.transColor,
         look,
-        decorLayout(frame.trans, look.transSize, vertical),
+        decorLayout(frame.trans, look.transSize, upright, transUsed),
         look.transFont,
       );
     }
@@ -250,8 +273,9 @@ function measureBands(
   const placed = linePlacement(clips, frame.key, mediaMs, look, shown, timing);
   const translated = transPlacement(clips, frame.key, mediaMs, look, shown, timing);
   const gap = trackPx(look, scale);
+  const rest = restAnchors(clips, frame.key, look);
   if (isVerticalFlow(look.flow)) {
-    return verticalColumns(
+    const columns = verticalColumns(
       placed.x * width,
       placed.y * height,
       translated.x * width,
@@ -264,6 +288,9 @@ function measureBands(
       },
       gap,
     );
+    scaleColumn(columns.main, fitted(frame.text, look.size, look, rest.y, true));
+    if (columns.trans) scaleColumn(columns.trans, fitted(frame.trans, look.transSize, look, rest.transY, true));
+    return columns;
   }
   const words = shown[frame.index]?.words ?? null;
   const edged = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset === "edge";
@@ -276,7 +303,48 @@ function measureBands(
     trans = gap > 0 ? textGapWidth(ctx, Array.from(frame.trans), gap) : edged ? runWidth(ctx, frame.trans) : ctx.measureText(frame.trans).width;
   }
   ctx.font = kept;
-  return lyricBands(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), { main, trans });
+  const mainUsed = fitted(frame.text, look.size, look, rest.x, false);
+  const transUsed = frame.trans ? fitted(frame.trans, look.transSize, look, rest.transX, false) : 1;
+  return lyricBands(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), {
+    main: main * mainUsed,
+    trans: trans * transUsed,
+  });
+}
+
+function fitted(text: string, size: number, look: LyricLook, anchor: number, vertical: boolean): number {
+  return fitUsed(fitPercent(Array.from(text).length, size, look.tracking, look.outline, anchor, vertical ? playHeight : playWidth));
+}
+
+function restAnchors(clips: MotionClip[], key: string, look: LyricLook) {
+  const bound = clips.find((clip) => clip.lineKey && clip.lineKey === key);
+  if (!bound) return { x: look.x, y: look.y, transX: look.transX, transY: look.transY };
+  const shift = transOffset(bound);
+  return {
+    x: look.x + bound.enter.x,
+    y: look.y + bound.enter.y,
+    transX: look.transX + shift.x,
+    transY: look.transY + shift.y,
+  };
+}
+
+function scaleColumn(band: { w: number; h: number } | null, used: number) {
+  if (!band || used >= 1) return;
+  band.w *= used;
+  band.h *= used;
+}
+
+/** 橫排只縮闊度，高度留返。繞定位縮，先至同成片的 \fscx 對齊。 */
+function squeeze(ctx: CanvasRenderingContext2D, x: number, y: number, used: number, draw: () => void) {
+  if (used >= 1) {
+    draw();
+    return;
+  }
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(used, 1);
+  ctx.translate(-x, -y);
+  draw();
+  ctx.restore();
 }
 
 function transRatio(look: LyricLook): number {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { lyricLine } from "../../src/core/lyrics";
 import { defaultTiming } from "../../src/core/timing";
-import { defaultLook } from "../../src/core/lyricLook";
+import { defaultLook, fitPercent, fitUsed, playHeight, playWidth } from "../../src/core/lyricLook";
 import { testClipLines } from "../../src/core/preview";
 import { drawPreview } from "../../src/renderer/src/drawPreview";
 
@@ -10,6 +11,7 @@ describe("預覽字體", () => {
     host.window ??= { devicePixelRatio: 1 };
     host.window.devicePixelRatio = 1;
     const paints: { text: string; font: string }[] = [];
+    const scales: number[][] = [];
     const ctx = {
       font: "16px sans-serif",
       fillStyle: "",
@@ -34,7 +36,9 @@ describe("預覽字體", () => {
       fillRect() {},
       translate() {},
       rotate() {},
-      scale() {},
+      scale(...args: number[]) {
+        scales.push(args);
+      },
       measureText(text: string) {
         return { width: Array.from(text).length * 10 };
       },
@@ -60,5 +64,83 @@ describe("預覽字體", () => {
     expect(trans.length).toBeGreaterThan(0);
     expect(orig.every((paint) => paint.font.startsWith('64px "KaiTi"'))).toBe(true);
     expect(trans.every((paint) => paint.font.startsWith('36px "Microsoft JhengHei"'))).toBe(true);
+    expect(scales).toEqual([]);
+  });
+
+  it("過長橫排只縮闊度，直排先縮字級", () => {
+    const host = globalThis as { window?: { devicePixelRatio: number } };
+    host.window ??= { devicePixelRatio: 1 };
+    host.window.devicePixelRatio = 1;
+    const paints: { text: string; font: string }[] = [];
+    const scales: number[][] = [];
+    const ctx = {
+      font: "16px sans-serif",
+      fillStyle: "",
+      strokeStyle: "",
+      textAlign: "left",
+      textBaseline: "alphabetic",
+      globalAlpha: 1,
+      filter: "none",
+      lineJoin: "miter",
+      miterLimit: 10,
+      lineWidth: 1,
+      stack: [] as string[],
+      save() {
+        this.stack.push(this.font);
+      },
+      restore() {
+        const prev = this.stack.pop();
+        if (prev != null) this.font = prev;
+      },
+      setTransform() {},
+      clearRect() {},
+      fillRect() {},
+      translate() {},
+      rotate() {},
+      scale(...args: number[]) {
+        scales.push(args);
+      },
+      measureText(text: string) {
+        return { width: Array.from(text).length * 10 };
+      },
+      fillText(text: string) {
+        paints.push({ text, font: this.font });
+      },
+      strokeText(text: string) {
+        paints.push({ text, font: this.font });
+      },
+    };
+    const canvas = {
+      clientWidth: 1920,
+      clientHeight: 1080,
+      width: 1920,
+      height: 1080,
+      getContext: () => ctx,
+    };
+    const text = "長".repeat(40);
+    const percent = fitPercent(text.length, defaultLook.size, defaultLook.tracking, defaultLook.outline, defaultLook.x, playWidth);
+    drawPreview(
+      canvas as unknown as HTMLCanvasElement,
+      [lyricLine(0, text, { translatedText: "短" })],
+      500,
+      "audio",
+      defaultTiming(),
+      defaultLook,
+      [],
+    );
+    expect(percent).toBeLessThan(100);
+    expect(scales).toEqual([[fitUsed(percent), 1]]);
+    expect(paints.filter((paint) => paint.text === text).every((paint) => paint.font.startsWith('64px "Chiron GoRound TC"'))).toBe(true);
+    const column = "直".repeat(16);
+    paints.length = 0;
+    scales.length = 0;
+    const upright = { ...defaultLook, flow: "vertical" as const };
+    const narrow = fitPercent(column.length, upright.size, upright.tracking, upright.outline, upright.y, playHeight);
+    drawPreview(canvas as unknown as HTMLCanvasElement, [lyricLine(0, column)], 500, "audio", defaultTiming(), upright, []);
+    const px = upright.size * fitUsed(narrow);
+    expect(narrow).toBeLessThan(100);
+    expect(scales).toEqual([]);
+    expect(paints.length).toBeGreaterThan(0);
+    expect(paints.every((paint) => paint.font.startsWith(`${px}px "Chiron GoRound TC"`))).toBe(true);
   });
 });

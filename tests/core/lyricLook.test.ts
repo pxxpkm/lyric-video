@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { buildKaraokeAss } from "../../src/core/ass";
-import { assColor, assFontSize, canvasFont, clampLook, defaultLook, isVerticalFlow, lyricFont, moveLook } from "../../src/core/lyricLook";
+import {
+  assColor,
+  assFontSize,
+  canvasFont,
+  clampLook,
+  defaultLook,
+  fitPercent,
+  fitUsed,
+  fitWidthTag,
+  frameRoom,
+  isVerticalFlow,
+  lineInk,
+  lyricFont,
+  moveLook,
+  playHeight,
+  playWidth,
+} from "../../src/core/lyricLook";
 import { exampleProject, parseProject } from "../../src/core/project";
 import { testClipLines } from "../../src/core/preview";
 
@@ -144,5 +160,25 @@ describe("字體", () => {
     const changed = parseProject({ ...raw, style: { ...picked.style, font: "yahei" } });
     expect(changed.style.font).toBe("yahei");
     expect(changed.style.transFont).toBe("kai");
+  });
+
+  it("放得落就唔收，過長先向下取整", () => {
+    expect(lineInk(0, 64, 0, 6)).toBe(0);
+    expect(lineInk(3, 64, 0, 6)).toBe(3 * 64 + 12);
+    expect(lineInk(3, 64, 8, 6)).toBe(3 * 64 + 16 + 12);
+    expect(frameRoom(0.5, playWidth)).toBe(1840);
+    expect(frameRoom(0.82, playHeight)).toBeCloseTo(308.8);
+    expect(fitPercent(3, 64, 0, 6, 0.5, playWidth)).toBe(100);
+    expect(fitUsed(100)).toBe(1);
+    expect(fitWidthTag(100)).toBe("");
+    const ink = lineInk(40, 64, 0, 6);
+    const room = frameRoom(0.5, playWidth);
+    expect(ink).toBeGreaterThan(room);
+    const percent = fitPercent(40, 64, 0, 6, 0.5, playWidth);
+    expect(percent).toBe(Math.floor((room / ink) * 100));
+    expect(percent).toBeLessThan(100);
+    expect(fitUsed(percent)).toBe(percent / 100);
+    expect(fitWidthTag(percent)).toBe(`\\fscx${percent}`);
+    expect(fitPercent(10, 64, 0, 0, 0.1, playWidth)).toBeLessThan(fitPercent(10, 64, 0, 0, 0.5, playWidth));
   });
 });

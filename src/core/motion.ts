@@ -1,4 +1,5 @@
 import { isAttachedTranslationLine, lineDisplayEndMs, lineKey, timeOfMs, type LyricLine } from "./lyrics";
+import { fitWidthTag } from "./lyricLook";
 import { mediaMsForLyric } from "./preview";
 import type { TrackTiming } from "./timing";
 
@@ -171,19 +172,24 @@ export function assFadeTag(clip: MotionClip, startMs = clip.startMs, endMs = cli
   return a0 === 0 && a1 === 0 ? "" : `\\fade(${a0},${a1},${a1},0,${dur},${dur},${dur})`;
 }
 
-/** 定位上的預設標籤。飛入只寫 \move，唔再加 \pos。變色由呼叫端決定加唔加。 */
-export function assPoseTags(preset: LinePreset | undefined, x: number, y: number, spanMs: number): string {
+/** 定位上的預設標籤。飛入只寫 \move，唔再加 \pos。變色由呼叫端決定加唔加。fit 係橫排收窄的百分比，100 就唔寫。 */
+export function assPoseTags(preset: LinePreset | undefined, x: number, y: number, spanMs: number, fit = 100): string {
   const pos = `\\pos(${x},${y})`;
+  const narrow = fitWidthTag(fit);
   if (preset === "fly") {
-    return `\\move(${x},${y + FLY_PX},${x},${y},0,${flyMs(spanMs)})`;
+    return `\\move(${x},${y + FLY_PX},${x},${y},0,${flyMs(spanMs)})${narrow}`;
   }
   if (preset === "scale") {
-    return `${pos}\\fscx82\\fscy82\\t(0,${pulseMs(spanMs)},\\fscx100\\fscy100)`;
+    // 放大自己有 \fscx。再寫一個會蓋住開頭，動畫完仲會彈返 \fscx100，收窄就失效。要乘入去。
+    if (!narrow) return `${pos}\\fscx82\\fscy82\\t(0,${pulseMs(spanMs)},\\fscx100\\fscy100)`;
+    const end = Math.max(1, Math.floor(fit));
+    const start = Math.max(1, Math.round((82 * end) / 100));
+    return `${pos}\\fscx${start}\\fscy82\\t(0,${pulseMs(spanMs)},\\fscx${end}\\fscy100)`;
   }
   if (preset === "turn") {
-    return `${pos}\\frz-6\\t(0,${pulseMs(spanMs)},\\frz0)`;
+    return `${pos}\\frz-6\\t(0,${pulseMs(spanMs)},\\frz0)${narrow}`;
   }
-  return pos;
+  return `${pos}${narrow}`;
 }
 
 export function assMotion(
@@ -192,10 +198,11 @@ export function assMotion(
   startMs = clip.startMs,
   endMs = clip.endMs,
   extra = "",
+  fit = 100,
 ): string {
   const x = Math.round((look.x + clip.enter.x) * 1920);
   const y = Math.round((look.y + clip.enter.y) * 1080);
-  return wrapAnchor(clip, x, y, startMs, endMs, extra);
+  return wrapAnchor(clip, x, y, startMs, endMs, extra, fit);
 }
 
 export function assTransMotion(
@@ -204,15 +211,16 @@ export function assTransMotion(
   startMs = clip.startMs,
   endMs = clip.endMs,
   extra = "",
+  fit = 100,
 ): string {
   const offset = transOffset(clip);
   const x = Math.round((look.transX + offset.x) * 1920);
   const y = Math.round((look.transY + offset.y) * 1080);
-  return wrapAnchor(clip, x, y, startMs, endMs, extra);
+  return wrapAnchor(clip, x, y, startMs, endMs, extra, fit);
 }
 
-function wrapAnchor(clip: MotionClip, x: number, y: number, startMs: number, endMs: number, extra: string): string {
-  return `{\\an5${assPoseTags(clip.preset, x, y, endMs - startMs)}${extra}${assFadeTag(clip, startMs, endMs)}}`;
+function wrapAnchor(clip: MotionClip, x: number, y: number, startMs: number, endMs: number, extra: string, fit: number): string {
+  return `{\\an5${assPoseTags(clip.preset, x, y, endMs - startMs, fit)}${extra}${assFadeTag(clip, startMs, endMs)}}`;
 }
 
 /** 裝飾小點。座標係 1080 畫面相對定位的像素。歌詞本身唔用呢組點。 */
@@ -231,13 +239,14 @@ export type DecorDot = {
   moveMs: number;
 };
 
-/** 橫排沿字寬鋪，直排沿字柱高鋪。預覽同匯出都用字數乘字級，唔用畫面量度。 */
+/** 橫排沿字寬鋪，直排沿字柱高鋪。預覽同匯出都用字數乘字級，唔用畫面量度。fit 細過 1 先至跟收窄，否則維持字數乘字級。 */
 export type DecorLayout = { axis: "x" | "y"; extent: number; size: number };
 
-export function decorLayout(text: string, size: number, vertical: boolean): DecorLayout {
+export function decorLayout(text: string, size: number, vertical: boolean, fit = 1): DecorLayout {
   const count = Math.max(1, Array.from(text).length);
   const nominal = Number.isFinite(size) && size > 0 ? size : 64;
-  return { axis: vertical ? "y" : "x", extent: count * nominal, size: nominal };
+  const used = typeof fit === "number" && Number.isFinite(fit) && fit > 0 && fit < 1 ? fit : 1;
+  return { axis: vertical ? "y" : "x", extent: count * nominal * used, size: nominal };
 }
 
 function lineSlots(count: number, extent: number): number[] {

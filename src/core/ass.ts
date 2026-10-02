@@ -6,7 +6,23 @@ import {
   timeOfMs,
   type LyricLine,
 } from "./lyrics";
-import { assColor, assFontSize, defaultLook, edgeOutlineAt, glyphStep, isVerticalFlow, letterGap, lyricFont, softBlur, type LyricLook } from "./lyricLook";
+import {
+  assColor,
+  assFontSize,
+  defaultLook,
+  edgeOutlineAt,
+  fitPercent,
+  fitUsed,
+  fitWidthTag,
+  glyphStep,
+  isVerticalFlow,
+  letterGap,
+  lyricFont,
+  playHeight,
+  playWidth,
+  softBlur,
+  type LyricLook,
+} from "./lyricLook";
 import {
   assFadeTag,
   assMotion,
@@ -52,21 +68,23 @@ export function buildKaraokeAss(
     } else {
       const wordTimed = pieces.some((piece) => piece.cs != null);
       const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
-      const lead = clip ? withBlur(assMotion(clip, look, start, end, tint), look) : place(look);
+      const origFit = fitPercent(Array.from(line.text).length, look.size, look.tracking, look.outline, restX(look, clip), playWidth);
+      const lead = clip ? withBlur(assMotion(clip, look, start, end, tint, origFit), look) : place(look, origFit);
       events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look, clip?.preset === "edge")}`));
-      pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size);
+      pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size, fitUsed(origFit));
       const trans = line.translatedText?.trim();
       if (trans) {
         const at = transAnchorPx(look, clip);
+        const transFit = fitPercent(Array.from(trans).length, look.transSize, look.tracking, look.outline, transRest(look, clip).x, playWidth);
         const body = withBlur(
           clip
-            ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "")
-            : posTag(at.x, at.y, ""),
+            ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "", transFit)
+            : posTag(at.x, at.y, "", transFit),
           look,
         );
         const transText = clip?.preset === "edge" ? edgeBody(trans, look.outlineColor, look.sungColor) : escapeAss(trans);
         events.push(dialogue("Trans", start, end, `${body}${transText}`));
-        pushDecor(events, at, look.transColor, look, clip, start, end, "Trans", trans, look.transSize);
+        pushDecor(events, at, look.transColor, look, clip, start, end, "Trans", trans, look.transSize, fitUsed(transFit));
       }
     }
   }
@@ -161,33 +179,37 @@ function verticalEvents(
   const span = end - start;
   const glyphs = stackGlyphs(pieces);
   const edged = clip?.preset === "edge";
-  // 直排每隻字一個對話，樣式 Spacing 唔會拉開字柱，所以步進自己加字距。
-  const origStep = glyphStep(look.size, look.tracking);
+  // 直排每隻字一個對話，樣式 Spacing 唔會拉開字柱，所以步進自己加字距。過長就字級同步進一齊縮，唔好再用 \fscx。
+  const origUsed = fitUsed(fitPercent(Array.from(line.text).length, look.size, look.tracking, look.outline, restY(look, clip), playHeight));
+  const origStep = glyphStep(look.size, look.tracking) * origUsed;
   const events = glyphs.map((glyph, index) =>
     dialogue(
       "Orig",
       start,
       end,
-      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, origStep, index), look.size, look, fade, glyph.switchMs, look.color, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor, look.font)}${escapeAss(glyph.ch)}`,
+      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, origStep, index), look.size * origUsed, look, fade, glyph.switchMs, look.color, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor, look.font)}${escapeAss(glyph.ch)}`,
     ),
   );
   const trans = line.translatedText?.trim();
   if (trans) {
     const chars = Array.from(trans);
-    const step = glyphStep(look.transSize, look.tracking);
+    const transUsed = fitUsed(
+      fitPercent(chars.length, look.transSize, look.tracking, look.outline, transRest(look, clip).y, playHeight),
+    );
+    const step = glyphStep(look.transSize, look.tracking) * transUsed;
     chars.forEach((ch, index) => {
       events.push(
         dialogue(
           "Trans",
           start,
           end,
-          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), look.transSize, look, fade, null, look.transColor, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, chars.length) : look.outlineColor, look.transFont)}${escapeAss(ch)}`,
+          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), look.transSize * transUsed, look, fade, null, look.transColor, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, chars.length) : look.outlineColor, look.transFont)}${escapeAss(ch)}`,
         ),
       );
     });
-    pushDecor(events, transAt, look.transColor, look, clip, start, end, "Trans", trans, look.transSize);
+    pushDecor(events, transAt, look.transColor, look, clip, start, end, "Trans", trans, look.transSize, transUsed);
   }
-  pushDecor(events, anchor, look.color, look, clip, start, end, "Orig", line.text, look.size);
+  pushDecor(events, anchor, look.color, look, clip, start, end, "Orig", line.text, look.size, origUsed);
   return events;
 }
 
@@ -207,18 +229,31 @@ function stackGlyphs(pieces: KaraokePiece[]): { ch: string; switchMs: number | n
 
 function anchorPx(look: LyricLook, clip: MotionClip | undefined): { x: number; y: number } {
   return {
-    x: (clip ? look.x + clip.enter.x : look.x) * 1920,
-    y: (clip ? look.y + clip.enter.y : look.y) * 1080,
+    x: restX(look, clip) * playWidth,
+    y: restY(look, clip) * playHeight,
   };
 }
 
 function transAnchorPx(look: LyricLook, clip: MotionClip | undefined): { x: number; y: number } {
-  const offset = clip ? transOffset(clip) : { x: 0, y: 0 };
-  return { x: (look.transX + offset.x) * 1920, y: (look.transY + offset.y) * 1080 };
+  const at = transRest(look, clip);
+  return { x: at.x * playWidth, y: at.y * playHeight };
 }
 
-function posTag(x: number, y: number, fade: string): string {
-  return `{\\an5\\pos(${Math.round(x)},${Math.round(y)})${fade}}`;
+function restX(look: LyricLook, clip: MotionClip | undefined): number {
+  return clip ? look.x + clip.enter.x : look.x;
+}
+
+function restY(look: LyricLook, clip: MotionClip | undefined): number {
+  return clip ? look.y + clip.enter.y : look.y;
+}
+
+function transRest(look: LyricLook, clip: MotionClip | undefined): { x: number; y: number } {
+  const offset = clip ? transOffset(clip) : { x: 0, y: 0 };
+  return { x: look.transX + offset.x, y: look.transY + offset.y };
+}
+
+function posTag(x: number, y: number, fade: string, fit = 100): string {
+  return `{\\an5\\pos(${Math.round(x)},${Math.round(y)})${fitWidthTag(fit)}${fade}}`;
 }
 
 function columnY(center: number, count: number, step: number, index: number): number {
@@ -257,12 +292,13 @@ function pushDecor(
   style: string,
   text: string,
   nominal: number,
+  fit = 1,
 ): void {
   if (!clip || !isDecor(clip.preset)) return;
   const ox = Math.round(anchor.x);
   const oy = Math.round(anchor.y);
   const span = end - start;
-  const layout = decorLayout(text, nominal, isVerticalFlow(look.flow));
+  const layout = decorLayout(text, nominal, isVerticalFlow(look.flow), fit);
   for (const dot of decorDots(clip.preset, span, layout)) {
     const size = assFontSize(dot.size, style === "Trans" ? look.transFont : look.font);
     const move = decorMoveWindow(dot, span);
@@ -293,12 +329,12 @@ function escapeAss(text: string): string {
   return text.replaceAll("\\", "\\\\").replaceAll("{", "\\{").replaceAll("}", "\\}").replaceAll("\n", "\\N");
 }
 
-function place(look: LyricLook): string {
-  const x = Math.round(look.x * 1920);
-  const y = Math.round(look.y * 1080);
+function place(look: LyricLook, fit = 100): string {
+  const x = Math.round(look.x * playWidth);
+  const y = Math.round(look.y * playHeight);
   const size = assFontSize(look.size, look.font);
   const blur = look.soft ? `\\blur${softBlur}` : "";
-  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}${blur}}`;
+  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}${fitWidthTag(fit)}${blur}}`;
 }
 
 function withBlur(tag: string, look: LyricLook): string {

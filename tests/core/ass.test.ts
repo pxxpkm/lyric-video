@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildKaraokeAss, karaokeCentiseconds } from "../../src/core/ass";
 import { lyricLine } from "../../src/core/lyrics";
-import { assColor, assFontSize, defaultLook, edgeOutlineAt, softBlur } from "../../src/core/lyricLook";
+import { assColor, assFontSize, defaultLook, edgeOutlineAt, fitPercent, fitUsed, playHeight, playWidth, softBlur } from "../../src/core/lyricLook";
 import { decorDots, decorFadeTag, decorLayout, decorMoveWindow, setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
 import { exampleProject, parseProject } from "../../src/core/project";
@@ -63,7 +63,9 @@ describe("karaoke.ass", () => {
     expect(trans).not.toContain(assColor("#111111"));
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "vertical" });
     const glyph = vertical.split("\n").find((row) => row.endsWith("譯"));
-    expect(glyph).toContain(`\\fs${assFontSize(80, "chiron")}`);
+    const transFit = fitPercent(Array.from("第二句譯文").length, 80, look.tracking, look.outline, look.transY, playHeight);
+    expect(transFit).toBeLessThan(100);
+    expect(glyph).toContain(`\\fs${assFontSize(80 * fitUsed(transFit), "chiron")}`);
     expect(glyph).toContain(`\\1c${assColor("#ABCDEF")}`);
     const main = vertical.split("\n").find((row) => row.endsWith("第"));
     expect(main).toContain(`\\fs${assFontSize(40, "chiron")}`);
@@ -417,8 +419,10 @@ describe("karaoke.ass", () => {
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "vertical" });
     const glyph = vertical.split("\n").find((row) => row.endsWith("譯"));
     const main = vertical.split("\n").find((row) => row.endsWith("第"));
-    expect(glyph).toContain(`\\fs${assFontSize(80, "kai")}`);
-    expect(glyph).not.toContain(`\\fs${assFontSize(80, "chiron")}`);
+    const transFit = fitPercent(Array.from("第二句譯文").length, 80, look.tracking, look.outline, look.transY, playHeight);
+    expect(transFit).toBeLessThan(100);
+    expect(glyph).toContain(`\\fs${assFontSize(80 * fitUsed(transFit), "kai")}`);
+    expect(glyph).not.toContain(`\\fs${assFontSize(80 * fitUsed(transFit), "chiron")}`);
     expect(main).toContain(`\\fs${assFontSize(40, "chiron")}`);
     expect(main).not.toContain(`\\fs${assFontSize(40, "kai")}`);
     const dusty = buildKaraokeAss(testClipLines(), undefined, look, [
@@ -446,6 +450,60 @@ describe("karaoke.ass", () => {
     expect(styles[0]?.startsWith("Style: Orig,Microsoft JhengHei,")).toBe(true);
     expect(styles[1]?.startsWith("Style: Trans,Microsoft JhengHei,")).toBe(true);
     expect(styles.every((row) => row.includes(",100,100,3,0,"))).toBe(true);
+  });
+
+  it("過長先收窄，短句唔寫 \\fscx，直排短句位置不變", () => {
+    expect(buildKaraokeAss(testClipLines())).not.toContain("\\fscx");
+    const text = "長".repeat(40);
+    const percent = fitPercent(text.length, defaultLook.size, defaultLook.tracking, defaultLook.outline, defaultLook.x, playWidth);
+    expect(percent).toBeLessThan(100);
+    const line = lyricLine(1_000, text, {
+      translatedText: "短",
+      words: [
+        { startMs: 0, durMs: 500, text: text.slice(0, 20) },
+        { startMs: 500, durMs: 500, text: text.slice(20) },
+      ],
+    });
+    const ass = buildKaraokeAss([line]);
+    const orig = ass.split("\n").find((row) => row.includes(",Orig,"));
+    const trans = ass.split("\n").find((row) => row.includes(",Trans,"));
+    expect(orig).toContain(`\\fscx${percent}`);
+    expect(orig).toContain("\\k");
+    expect(orig).not.toContain("\\fscy");
+    expect(orig).not.toContain("\\N");
+    expect(orig).not.toContain("\\move");
+    expect(trans).not.toContain("\\fscx");
+    const scaled = buildKaraokeAss([line], undefined, defaultLook, [presetClip("1000|" + text, text, 1000, 3000, "scale")]);
+    const pulsing = scaled.split("\n").find((row) => row.includes(",Orig,"));
+    const end = percent;
+    const start = Math.max(1, Math.round((82 * end) / 100));
+    expect(pulsing).toContain(`\\fscx${start}\\fscy82\\t(0,300,\\fscx${end}\\fscy100)`);
+    expect(pulsing).not.toContain("\\fscx100");
+    const dusty = buildKaraokeAss([line], undefined, defaultLook, [presetClip("1000|" + text, text, 1000, 3000, "dust")]);
+    const dots = dusty.split("\n").filter((row) => row.includes("●") && row.includes(",Orig,"));
+    const layout = decorLayout(text, defaultLook.size, false, fitUsed(percent));
+    const placed = decorDots("dust", 2000, layout);
+    expect(layout.extent).toBe(text.length * defaultLook.size * fitUsed(percent));
+    expect(decorLayout(text, defaultLook.size, false).extent).toBe(text.length * defaultLook.size);
+    expect(dots).toHaveLength(placed.length);
+    expect(dots[0]).toContain(`\\move(${960 + placed[0].x},${886 + placed[0].y},`);
+    expect(dots.every((row) => !row.includes("\\fscx") && !row.includes("\\blur") && !row.includes("\\k"))).toBe(true);
+    const column = "直".repeat(16);
+    const uprightLook = { ...defaultLook, flow: "vertical" as const, y: 0.5, outline: 0 };
+    const uprightPercent = fitPercent(column.length, uprightLook.size, 0, 0, 0.5, playHeight);
+    const used = fitUsed(uprightPercent);
+    expect(uprightPercent).toBeLessThan(100);
+    const upright = buildKaraokeAss([lyricLine(1_000, column)], undefined, uprightLook);
+    const step = uprightLook.size * used;
+    const y0 = Math.round(0.5 * playHeight + (0 - (column.length - 1) / 2) * step);
+    expect(upright).toContain(`\\fs${assFontSize(uprightLook.size * used, "chiron")}`);
+    expect(upright).toContain(`\\pos(960,${y0})`);
+    expect(upright).not.toContain("\\fscx");
+    expect(upright).not.toContain(`\\fs${assFontSize(uprightLook.size, "chiron")}`);
+    const short = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical" as const, size: 40 });
+    expect(short).toContain("\\pos(960,846)");
+    expect(short).toContain("\\pos(960,886)");
+    expect(short).toContain("\\pos(960,926)");
   });
 
   it("正的延遲讓字幕晚出現", () => {
