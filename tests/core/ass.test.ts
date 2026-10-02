@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildKaraokeAss, karaokeCentiseconds } from "../../src/core/ass";
 import { lyricLine } from "../../src/core/lyrics";
-import { assColor, assFontSize, defaultLook, edgeOutlineAt, fitPercent, fitUsed, playHeight, playWidth, softBlur } from "../../src/core/lyricLook";
+import { assColor, assFontSize, defaultLook, edgeOutlineAt, fitPercent, fitUsed, playHeight, playWidth, softBlur, verticalFitPercent, verticalPitch } from "../../src/core/lyricLook";
 import { decorDots, decorFadeTag, decorLayout, decorMoveWindow, setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
 import { exampleProject, parseProject } from "../../src/core/project";
@@ -32,15 +32,15 @@ describe("karaoke.ass", () => {
     const look = { ...defaultLook, flow: "vertical" as const, size: 40, transX: 0.8, transY: 0.82 };
     const ass = buildKaraokeAss(testClipLines(), undefined, look);
     expect(ass).not.toContain("\\frz");
-    expect(ass).toContain("\\pos(960,846)");
+    expect(ass).toContain("\\pos(960,832)");
     expect(ass).toContain("\\pos(960,886)");
-    expect(ass).toContain("\\pos(960,926)");
+    expect(ass).toContain("\\pos(960,940)");
     expect(ass).toContain("\\pos(1536,886)");
     expect(ass).toContain("\\t(400,400,\\1c");
     const upright = ass.split("\n").filter((row) => row.includes("第一") || row.includes("句"));
     expect(upright.some((row) => row.endsWith("第一句}"))).toBe(false);
     const legacy = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "left" as "vertical" });
-    expect(legacy).toContain("\\pos(960,846)");
+    expect(legacy).toContain("\\pos(960,832)");
     expect(legacy).not.toContain("\\pos(192,");
   });
 
@@ -63,7 +63,16 @@ describe("karaoke.ass", () => {
     expect(trans).not.toContain(assColor("#111111"));
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "vertical" });
     const glyph = vertical.split("\n").find((row) => row.endsWith("譯"));
-    const transFit = fitPercent(Array.from("第二句譯文").length, 80, look.tracking, look.outline, look.transY, playHeight);
+    const transFit = verticalFitPercent(
+      Array.from("第二句譯文").length,
+      80,
+      look.tracking,
+      look.outline,
+      look.transY,
+      playHeight,
+      look.font,
+      look.columnGap,
+    );
     expect(transFit).toBeLessThan(100);
     expect(glyph).toContain(`\\fs${assFontSize(80 * fitUsed(transFit), "chiron")}`);
     expect(glyph).toContain(`\\1c${assColor("#ABCDEF")}`);
@@ -95,11 +104,11 @@ describe("karaoke.ass", () => {
       .filter((line) => line.includes("\\move"))
       .map((line) => line.match(/\\move\((\d+),(\d+),(\d+),(\d+),0,(\d+)\)/));
     expect(moves).toHaveLength(3);
-    expect(moves.map((match) => Number(match?.[4]))).toEqual([846, 886, 926]);
-    expect(moves.map((match) => Number(match?.[2]))).toEqual([918, 958, 998]);
+    expect(moves.map((match) => Number(match?.[4]))).toEqual([832, 886, 940]);
+    expect(moves.map((match) => Number(match?.[2]))).toEqual([904, 958, 1012]);
     expect(moves.every((match) => match?.[1] === "960" && match?.[3] === "960" && match?.[5] === "350")).toBe(true);
-    expect(Number(moves[1]?.[4]) - Number(moves[0]?.[4])).toBe(40);
-    expect(Number(moves[1]?.[2]) - Number(moves[0]?.[2])).toBe(40);
+    expect(Number(moves[1]?.[4]) - Number(moves[0]?.[4])).toBe(54);
+    expect(Number(moves[1]?.[2]) - Number(moves[0]?.[2])).toBe(54);
   });
 
   it("放大同擺正寫縮放同角度，只有淡入唔寫 \\move", () => {
@@ -116,7 +125,7 @@ describe("karaoke.ass", () => {
     const glyphs = turned.split("\n").filter((line) => line.includes("\\frz-6\\t(0,300,\\frz0)"));
     expect(glyphs).toHaveLength(3);
     expect(glyphs.every((line) => line.includes("\\pos(") && !line.includes("\\move"))).toBe(true);
-    expect(glyphs.map((line) => line.match(/\\pos\(\d+,(\d+)\)/)?.[1])).toEqual(["846", "886", "926"]);
+    expect(glyphs.map((line) => line.match(/\\pos\(\d+,(\d+)\)/)?.[1])).toEqual(["832", "886", "940"]);
     const faded = setLineFade([], "1000|第一句", "第一句", 1000, 3000, "in", 400);
     const fadeOnly = buildKaraokeAss(testClipLines(), undefined, defaultLook, faded);
     const fadedOrig = fadeOnly.split("\n").find((line) => line.includes("第一句") && line.includes(",Orig,"));
@@ -202,9 +211,9 @@ describe("karaoke.ass", () => {
     expect(dots.every((row) => !row.includes("\\k"))).toBe(true);
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40 }, [clip]);
     const upright = decorDots("dust", 2000, decorLayout("第一句", 40, true));
-    expect(vertical).toContain("\\pos(960,846)");
+    expect(vertical).toContain("\\pos(960,832)");
     expect(vertical).toContain("\\pos(960,886)");
-    expect(vertical).toContain("\\pos(960,926)");
+    expect(vertical).toContain("\\pos(960,940)");
     expect(vertical.split("\n").filter((row) => row.includes("●"))).toHaveLength(upright.length);
     const both = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, transColor: "#ABCDEF" }, [
       presetClip("3000|第二句", "第二句", 3000, 6000, "dust"),
@@ -270,7 +279,7 @@ describe("karaoke.ass", () => {
     const plain = buildKaraokeAss(testClipLines()).split("\n").find((row) => row.includes("第一句"));
     expect(tags(plain)).toEqual([assColor(defaultLook.outlineColor)]);
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40 }, [clip]);
-    const glyphs = ["846", "886", "926"].map((y) => vertical.split("\n").find((row) => row.includes(`\\pos(960,${y})`)));
+    const glyphs = ["832", "886", "940"].map((y) => vertical.split("\n").find((row) => row.includes(`\\pos(960,${y})`)));
     expect(glyphs.every((row) => row?.includes("\\pos(") && !row.includes("\\move"))).toBe(true);
     expect(glyphs.map((row) => tags(row)[0])).toEqual(colors(3));
     const both = buildKaraokeAss(testClipLines(), undefined, defaultLook, [
@@ -353,16 +362,16 @@ describe("karaoke.ass", () => {
     expect(lyric).not.toContain("\\move");
     expect(spaced).not.toContain("●");
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40, tracking: 10 });
-    expect(vertical).toContain("\\pos(960,836)");
+    expect(vertical).toContain("\\pos(960,822)");
     expect(vertical).toContain("\\pos(960,886)");
-    expect(vertical).toContain("\\pos(960,936)");
-    expect(vertical).not.toContain("\\pos(960,846)");
-    expect(vertical).not.toContain("\\pos(960,926)");
+    expect(vertical).toContain("\\pos(960,950)");
+    expect(vertical).not.toContain("\\pos(960,832)");
+    expect(vertical).not.toContain("\\pos(960,940)");
     expect(vertical).toContain(`\\fs${assFontSize(40, "chiron")}`);
     expect(vertical).not.toContain(`\\fs${assFontSize(50, "chiron")}`);
     const zero = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40, tracking: 0 });
-    expect(zero).toContain("\\pos(960,846)");
-    expect(zero).toContain("\\pos(960,926)");
+    expect(zero).toContain("\\pos(960,832)");
+    expect(zero).toContain("\\pos(960,940)");
   });
 
   it("未開柔邊就冇 \\blur", () => {
@@ -405,9 +414,9 @@ describe("karaoke.ass", () => {
     expect(dots.length).toBeGreaterThan(0);
     expect(dots.every((row) => !row.includes("\\blur"))).toBe(true);
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "vertical", size: 40 });
-    expect(vertical).toContain("\\pos(960,846)");
+    expect(vertical).toContain("\\pos(960,832)");
     expect(vertical).toContain("\\pos(960,886)");
-    expect(vertical).toContain("\\pos(960,926)");
+    expect(vertical).toContain("\\pos(960,940)");
     const glyphs = vertical.split("\n").filter((row) => row.includes("\\pos(960,886)") && !row.includes("●"));
     expect(glyphs.length).toBeGreaterThan(0);
     expect(glyphs.every((row) => row.includes(`\\blur${softBlur}`))).toBe(true);
@@ -424,7 +433,16 @@ describe("karaoke.ass", () => {
     const vertical = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "vertical" });
     const glyph = vertical.split("\n").find((row) => row.endsWith("譯"));
     const main = vertical.split("\n").find((row) => row.endsWith("第"));
-    const transFit = fitPercent(Array.from("第二句譯文").length, 80, look.tracking, look.outline, look.transY, playHeight);
+    const transFit = verticalFitPercent(
+      Array.from("第二句譯文").length,
+      80,
+      look.tracking,
+      look.outline,
+      look.transY,
+      playHeight,
+      "kai",
+      look.columnGap,
+    );
     expect(transFit).toBeLessThan(100);
     expect(glyph).toContain(`\\fs${assFontSize(80 * fitUsed(transFit), "kai")}`);
     expect(glyph).not.toContain(`\\fs${assFontSize(80 * fitUsed(transFit), "chiron")}`);
@@ -495,20 +513,29 @@ describe("karaoke.ass", () => {
     expect(dots.every((row) => !row.includes("\\fscx") && !row.includes("\\blur") && !row.includes("\\k"))).toBe(true);
     const column = "直".repeat(16);
     const uprightLook = { ...defaultLook, flow: "vertical" as const, y: 0.5, outline: 0 };
-    const uprightPercent = fitPercent(column.length, uprightLook.size, 0, 0, 0.5, playHeight);
+    const uprightPercent = verticalFitPercent(
+      column.length,
+      uprightLook.size,
+      0,
+      0,
+      0.5,
+      playHeight,
+      uprightLook.font,
+      uprightLook.columnGap,
+    );
     const used = fitUsed(uprightPercent);
     expect(uprightPercent).toBeLessThan(100);
     const upright = buildKaraokeAss([lyricLine(1_000, column)], undefined, uprightLook);
-    const step = uprightLook.size * used;
+    const step = verticalPitch(uprightLook.size, 0, 0, used, uprightLook.font, uprightLook.columnGap);
     const y0 = Math.round(0.5 * playHeight + (0 - (column.length - 1) / 2) * step);
     expect(upright).toContain(`\\fs${assFontSize(uprightLook.size * used, "chiron")}`);
     expect(upright).toContain(`\\pos(960,${y0})`);
     expect(upright).not.toContain("\\fscx");
     expect(upright).not.toContain(`\\fs${assFontSize(uprightLook.size, "chiron")}`);
     const short = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical" as const, size: 40 });
-    expect(short).toContain("\\pos(960,846)");
+    expect(short).toContain("\\pos(960,832)");
     expect(short).toContain("\\pos(960,886)");
-    expect(short).toContain("\\pos(960,926)");
+    expect(short).toContain("\\pos(960,940)");
   });
 
   it("句頭句尾淡入淡出，短句自動縮，小點唔跟", () => {

@@ -31,6 +31,8 @@ export type LyricLook = {
   soft: boolean;
   /** 1080 畫面的高斯模糊。0 就同關閉一樣。原文同譯文共用。 */
   softBlur: number;
+  /** 直排成片每隻字再加的空位。0 貼住量到的臨界。負數更密。預覽唔用。 */
+  columnGap: number;
 };
 
 /** 未寫過程度、但已經開過柔邊時用。參考檔喺 720p 用 4，呢度用較輕的 1.5，避免同裙邊疊到發糊。 */
@@ -38,6 +40,11 @@ export const softBlur = 1.5;
 
 /** 柔邊拉桿的上限。 */
 export const softBlurMax = 4;
+
+/** 直排成片間距。0 係量到的臨界。預設再密 2 點，最高那隻字會輕輕貼入。 */
+export const columnGapMin = -8;
+export const columnGapMax = 8;
+export const defaultColumnGap = -2;
 
 /** 同樣式邊距一樣。收窄留呢條白邊，字先至唔貼住畫面。 */
 export const frameEdge = 40;
@@ -66,6 +73,7 @@ export const defaultLook: LyricLook = {
   tracking: 0,
   soft: false,
   softBlur: 0,
+  columnGap: defaultColumnGap,
 };
 
 const aliases: Record<string, string> = {
@@ -108,7 +116,15 @@ export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) 
     tracking: Math.round(clamp(raw.tracking, 0, 8, defaultLook.tracking)),
     soft: lyricBlur(raw.soft, raw.softBlur) > 0,
     softBlur: lyricBlur(raw.soft, raw.softBlur),
+    columnGap: columnGapOf(raw.columnGap),
   };
+}
+
+/** 未寫就用預設 −2。寫低的 0 係臨界，要保留。 */
+export function columnGapOf(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return defaultColumnGap;
+  const clamped = Math.min(columnGapMax, Math.max(columnGapMin, value));
+  return Math.round(clamped);
 }
 
 /** 寫低的程度優先。未寫時，開過就用 1.5，否則 0。0 係關閉，要寫低。 */
@@ -128,12 +144,55 @@ export function letterGap(tracking: number | undefined): number {
   return tracking;
 }
 
-/** 直排字柱每隻字的步進。字距 0 就等於字級。 */
+/** 直排字柱每隻字的步進。字距 0 就等於字級。預覽用呢個數，筆畫置中，裙邊只有一半伸出字格。 */
 export function glyphStep(size: number, tracking: number | undefined): number {
   return size + letterGap(tracking);
 }
 
-/** 一行字墨加兩側裙邊。橫排直排同一個數，唔用量度，預覽同匯出先至同一比例。 */
+/**
+ * 成片最高那隻字，超出「字級 + 兩倍裙邊」的點數。libass 量過，這段唔跟字級變長。
+ * 昭源、正黑、雅黑在字級 40 到 120、裙邊 6 剛剛貼住，所以係 4。字級 64 的臨界步進係 80。
+ * 字級 24 只超出 2，用 4 會剩 2 點，避免再低過較大字級的臨界。
+ * 標楷只量過字級 64 的「中」，實高 86，所以係 10。
+ * 收窄唔縮這段，亦不縮裙邊。預覽仍然用 glyphStep。
+ */
+const verticalExtra: Record<string, number> = {
+  chiron: 4,
+  jhenghei: 4,
+  yahei: 4,
+  kai: 10,
+};
+
+export function verticalPitch(
+  size: number,
+  tracking: number | undefined,
+  outline: number,
+  used = 1,
+  fontId?: string,
+  gap?: number,
+): number {
+  const scale = shrink(used);
+  return glyphBox(size, outline, fontId, gap, scale) + letterGap(tracking) * scale;
+}
+
+/** 成片直排成柱高度。字距只加在字與字之間。每隻字的臨界超出唔跟收窄。 */
+export function verticalInk(
+  count: number,
+  size: number,
+  tracking: number | undefined,
+  outline: number,
+  used = 1,
+  fontId?: string,
+  gap?: number,
+): number {
+  const n = whole(count);
+  if (n <= 0) return 0;
+  const scale = shrink(used);
+  const occupied = glyphBox(size, outline, fontId, gap, scale);
+  return n * occupied + Math.max(0, n - 1) * letterGap(tracking) * scale;
+}
+
+/** 一行字墨加兩側裙邊。橫排成句，同預覽直排，用呢個數。成片直排見 verticalInk。 */
 export function lineInk(count: number, size: number, tracking: number | undefined, outline: number): number {
   const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
   if (n <= 0) return 0;
@@ -152,7 +211,7 @@ export function frameRoom(anchor: number, frame: number, margin = frameEdge): nu
 
 /**
  * 100 表示放得落，唔使收。否則向下取整，避免四捨五入之後仍然超出。
- * 橫排用畫面闊，直排用畫面高。
+ * 橫排用畫面闊。預覽直排用畫面高，仍然係成句外圍兩側裙邊。
  */
 export function fitPercent(
   count: number,
@@ -166,6 +225,29 @@ export function fitPercent(
   const room = frameRoom(anchor, frame);
   if (!(ink > room)) return 100;
   return Math.max(1, Math.floor((room / ink) * 100));
+}
+
+/**
+ * 成片直排先用。100 表示連每隻字自己的裙邊都放得落。
+ * 裙邊唔跟收窄，所以只縮字級同字距。
+ */
+export function verticalFitPercent(
+  count: number,
+  size: number,
+  tracking: number | undefined,
+  outline: number,
+  anchor: number,
+  frame: number,
+  fontId?: string,
+  gap?: number,
+): number {
+  const full = verticalInk(count, size, tracking, outline, 1, fontId, gap);
+  const room = frameRoom(anchor, frame);
+  if (!(full > room)) return 100;
+  const borders = whole(count) * Math.max(0, band(outline) * 2 + extraOf(fontId) + spare(gap));
+  const body = full - borders;
+  if (!(body > 0) || borders >= room) return 1;
+  return Math.max(1, Math.floor(((room - borders) / body) * 100));
 }
 
 /** 收窄比例。100 就係 1，短句的位置同字級先至唔會偏移。 */
@@ -276,6 +358,32 @@ export function isVerticalFlow(flow: string | undefined): boolean {
 
 function flowOf(value: string | undefined): LyricFlow {
   return isVerticalFlow(value) ? "vertical" : "horizontal";
+}
+
+function whole(count: number): number {
+  return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+}
+
+function band(value: number): number {
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function shrink(used: number): number {
+  return Number.isFinite(used) && used > 0 && used < 1 ? used : 1;
+}
+
+function extraOf(fontId: string | undefined): number {
+  return verticalExtra[lyricFont(fontId ?? "chiron").id] ?? verticalExtra.chiron;
+}
+
+/** 未傳就當 0，方便對住臨界。成片要另外傳 columnGap。 */
+function spare(gap: number | undefined): number {
+  if (typeof gap !== "number" || !Number.isFinite(gap)) return 0;
+  return columnGapOf(gap);
+}
+
+function glyphBox(size: number, outline: number, fontId: string | undefined, gap: number | undefined, scale: number): number {
+  return Math.max(1, band(size) * scale + band(outline) * 2 + extraOf(fontId) + spare(gap));
 }
 
 function unit(value: number): number {

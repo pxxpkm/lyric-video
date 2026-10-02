@@ -5,19 +5,26 @@ import {
   assFontSize,
   canvasFont,
   clampLook,
+  columnGapMax,
+  columnGapMin,
+  defaultColumnGap,
   defaultLook,
   fitPercent,
   fitUsed,
   fitWidthTag,
   frameRoom,
+  glyphStep,
+  verticalFitPercent,
+  verticalInk,
+  verticalPitch,
   isVerticalFlow,
   lineInk,
   lyricFont,
   moveLook,
-  playHeight,
-  playWidth,
   softBlur,
   softBlurMax,
+  playHeight,
+  playWidth,
 } from "../../src/core/lyricLook";
 import { exampleProject, parseProject } from "../../src/core/project";
 import { testClipLines } from "../../src/core/preview";
@@ -57,6 +64,12 @@ describe("字體", () => {
     expect(parsed.style.transSize).toBe(defaultLook.transSize);
     expect(parsed.style.transColor).toBe(defaultLook.color);
     expect(parsed.style.tracking).toBe(0);
+    expect(parsed.style.columnGap).toBe(defaultColumnGap);
+    expect(parseProject({ ...raw, style: { ...raw.style, columnGap: 0 } }).style.columnGap).toBe(0);
+    expect(clampLook({}).columnGap).toBe(defaultColumnGap);
+    expect(clampLook({ columnGap: 0 }).columnGap).toBe(0);
+    expect(clampLook({ columnGap: 8.6 }).columnGap).toBe(columnGapMax);
+    expect(clampLook({ columnGap: -20 }).columnGap).toBe(columnGapMin);
     expect(parsed.style.soft).toBe(false);
     expect(parsed.style.softBlur).toBe(0);
     expect(parsed.style.transFont).toBe(lyricFont(parsed.style.font).id);
@@ -68,8 +81,7 @@ describe("字體", () => {
     expect(clampLook({ soft: true, softBlur: 0 }).soft).toBe(false);
     expect(clampLook({ softBlur: 2.5 }).softBlur).toBe(2.5);
     expect(clampLook({ softBlur: 9 }).softBlur).toBe(softBlurMax);
-    const { softBlur: stored, ...opened } = raw.style;
-    expect(stored).toBe(0);
+    const { softBlur: _drop, ...opened } = raw.style;
     expect(parseProject({ ...raw, style: { ...opened, soft: true } }).style.softBlur).toBe(softBlur);
     expect(parseProject({ ...raw, style: { ...raw.style, softBlur: 0, soft: true } }).style).toMatchObject({ soft: false, softBlur: 0 });
     expect(parseProject({ ...raw, style: { ...raw.style, tracking: 4 } }).style.tracking).toBe(4);
@@ -192,5 +204,43 @@ describe("字體", () => {
     expect(fitUsed(percent)).toBe(percent / 100);
     expect(fitWidthTag(percent)).toBe(`\\fscx${percent}`);
     expect(fitPercent(10, 64, 0, 0, 0.1, playWidth)).toBeLessThan(fitPercent(10, 64, 0, 0, 0.5, playWidth));
+  });
+
+  it("成片直排步進貼住每個字體量到的臨界", () => {
+    expect(verticalPitch(40, 0, 6)).toBe(40 + 12 + 4);
+    expect(verticalPitch(40, 10, 6)).toBe(40 + 10 + 12 + 4);
+    expect(verticalPitch(40, 0, 0)).toBe(40 + 4);
+    expect(verticalPitch(64, 0, 6)).toBe(80);
+    expect(verticalPitch(64, 0, 6, 1, "jhenghei")).toBe(80);
+    expect(verticalPitch(64, 0, 6, 1, "yahei")).toBe(80);
+    expect(verticalPitch(64, 0, 6, 1, "kai")).toBe(86);
+    expect(verticalPitch(64, 0, 6, 0.5)).toBe(64 * 0.5 + 12 + 4);
+    expect(verticalInk(3, 64, 0, 6)).toBe(3 * verticalPitch(64, 0, 6));
+    expect(verticalInk(3, 64, 8, 6)).toBe(3 * (64 + 12 + 4) + 16);
+    expect(lineInk(3, 64, 0, 6)).toBe(3 * 64 + 12);
+    expect(verticalFitPercent(3, 40, 0, 6, 0.82, playHeight)).toBe(100);
+    const room = frameRoom(0.82, playHeight);
+    const body = 5 * 64;
+    const borders = 5 * (12 + 4);
+    const percent = verticalFitPercent(5, 64, 0, 6, 0.82, playHeight);
+    expect(percent).toBe(Math.max(1, Math.floor(((room - borders) / body) * 100)));
+    expect(percent).toBeLessThan(100);
+    expect(verticalInk(5, 64, 0, 6, fitUsed(percent))).toBeLessThanOrEqual(room);
+    expect(verticalFitPercent(8, 24, 0, 16, 0.08, playHeight)).toBe(1);
+  });
+
+  it("成片間距預設再密兩點，0 先至貼住臨界", () => {
+    expect(defaultLook.columnGap).toBe(defaultColumnGap);
+    expect(verticalPitch(64, 0, 6, 1, "chiron", 0)).toBe(80);
+    expect(verticalPitch(64, 0, 6, 1, "chiron", defaultColumnGap)).toBe(78);
+    expect(verticalPitch(64, 0, 6, 1, "kai", defaultColumnGap)).toBe(84);
+    expect(verticalPitch(40, 0, 6, 1, "chiron", -2)).toBe(54);
+    expect(verticalInk(3, 64, 0, 6, 1, "chiron", -2)).toBe(3 * 78);
+    expect(verticalInk(3, 64, 8, 6, 1, "chiron", -2)).toBe(3 * 78 + 16);
+    const room = frameRoom(0.82, playHeight);
+    const borders = 5 * (12 + 4 - 2);
+    const percent = verticalFitPercent(5, 64, 0, 6, 0.82, playHeight, "chiron", -2);
+    expect(percent).toBe(Math.max(1, Math.floor(((room - borders) / (5 * 64)) * 100)));
+    expect(glyphStep(64, 0)).toBe(64);
   });
 });

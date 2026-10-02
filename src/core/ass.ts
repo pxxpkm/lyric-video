@@ -14,13 +14,14 @@ import {
   fitPercent,
   fitUsed,
   fitWidthTag,
-  glyphStep,
   isVerticalFlow,
   letterGap,
   lyricFont,
   playHeight,
   playWidth,
   lyricBlur,
+  verticalFitPercent,
+  verticalPitch,
   type LyricLook,
 } from "./lyricLook";
 import {
@@ -179,9 +180,20 @@ function verticalEvents(
   const span = end - start;
   const glyphs = stackGlyphs(pieces);
   const edged = clip?.preset === "edge";
-  // 直排每隻字一個對話，樣式 Spacing 唔會拉開字柱，所以步進自己加字距。過長就字級同步進一齊縮，唔好再用 \fscx。
-  const origUsed = fitUsed(fitPercent(Array.from(line.text).length, look.size, look.tracking, look.outline, restY(look, clip), playHeight));
-  const origStep = glyphStep(look.size, look.tracking) * origUsed;
+  // 直排每隻字一個對話，樣式 Spacing 唔會拉開字柱。步進係臨界再加成片間距。過長只縮字級同字距，唔好再用 \fscx。
+  const origUsed = fitUsed(
+    verticalFitPercent(
+      Array.from(line.text).length,
+      look.size,
+      look.tracking,
+      look.outline,
+      restY(look, clip),
+      playHeight,
+      look.font,
+      look.columnGap,
+    ),
+  );
+  const origStep = verticalPitch(look.size, look.tracking, look.outline, origUsed, look.font, look.columnGap);
   const events = glyphs.map((glyph, index) =>
     dialogue(
       "Orig",
@@ -194,9 +206,18 @@ function verticalEvents(
   if (trans) {
     const chars = Array.from(trans);
     const transUsed = fitUsed(
-      fitPercent(chars.length, look.transSize, look.tracking, look.outline, transRest(look, clip).y, playHeight),
+      verticalFitPercent(
+        chars.length,
+        look.transSize,
+        look.tracking,
+        look.outline,
+        transRest(look, clip).y,
+        playHeight,
+        look.transFont,
+        look.columnGap,
+      ),
     );
-    const step = glyphStep(look.transSize, look.tracking) * transUsed;
+    const step = verticalPitch(look.transSize, look.tracking, look.outline, transUsed, look.transFont, look.columnGap);
     chars.forEach((ch, index) => {
       events.push(
         dialogue(

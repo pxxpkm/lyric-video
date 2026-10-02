@@ -1,4 +1,15 @@
-import { defaultLook, isVerticalFlow, lyricBlur, lyricFonts, softBlurMax, type LyricFlow, type LyricLook } from "../../core/lyricLook";
+import {
+  columnGapMax,
+  columnGapMin,
+  columnGapOf,
+  defaultLook,
+  isVerticalFlow,
+  lyricBlur,
+  lyricFonts,
+  softBlurMax,
+  type LyricFlow,
+  type LyricLook,
+} from "../../core/lyricLook";
 
 export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: (next: LyricLook) => void }) {
   function patch(part: Partial<LyricLook>) {
@@ -55,7 +66,18 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
       />
       <Color label="裙邊顏色" value={look.outlineColor} onChange={(outlineColor) => patch({ outlineColor })} />
       <Slider label="字距" min={0} max={8} step={1} value={look.tracking ?? 0} onChange={(tracking) => patch({ tracking })} />
-      <p className="meta span">0 同而家一樣。拉高就喺字與字之間加空位，直排就沿住字柱拉開。原文同譯文共用。</p>
+      <p className="meta span">0 同而家一樣。拉高就喺字與字之間加空位，直排就沿住字柱拉開。原文同譯文共用。預覽同成片都用。</p>
+      <Slider
+        label="成片間距"
+        min={columnGapMin}
+        max={columnGapMax}
+        step={1}
+        value={columnGapOf(look.columnGap)}
+        onChange={(columnGap) => patch({ columnGap })}
+      />
+      <p className="meta span">
+        而家 {columnGapOf(look.columnGap)}。只影響直排匯出。0 貼住量到的臨界。預設 −2，再密兩點。負數更密，正數更疏。預覽未改。原文同譯文共用。
+      </p>
       <Slider
         label="柔邊"
         min={0}

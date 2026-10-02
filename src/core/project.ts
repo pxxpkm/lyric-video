@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defaultLook, lyricBlur, pairedTrans, resolvedTransColor, resolvedTransFont, resolvedTransSize } from "./lyricLook";
+import { columnGapOf, defaultLook, lyricBlur, pairedTrans, resolvedTransColor, resolvedTransFont, resolvedTransSize } from "./lyricLook";
 import { knownPreset, linePresetNames, settleClip } from "./motion";
 
 const wordSchema = z.object({
@@ -95,6 +95,7 @@ export const projectSchema = z.object({
     tracking: z.number().default(0),
     soft: z.boolean().default(false),
     softBlur: z.number().optional(),
+    columnGap: z.number().optional(),
   }),
   decision: z.object({
     autoAccepted: z.boolean(),
@@ -126,6 +127,7 @@ function withTransPaint(style: Project["style"], raw: Record<string, unknown> | 
     transFont: resolvedTransFont(style.font, typeof raw?.transFont === "string" ? raw.transFont : style.transFont),
     softBlur: amount,
     soft: amount > 0,
+    columnGap: columnGapOf(style.columnGap),
   };
 }
 
@@ -207,6 +209,7 @@ export function exampleProject(): Project {
       tracking: defaultLook.tracking,
       soft: defaultLook.soft,
       softBlur: defaultLook.softBlur,
+      columnGap: defaultLook.columnGap,
     },
     motion: [],
     decision: { autoAccepted: false, score: 0, reason: "" },
