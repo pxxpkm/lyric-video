@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("lyric", {
     ipcRenderer.invoke("preview:save", projectPath, timing, look, motion),
   chironFont: () => ipcRenderer.invoke("look:chiron"),
   exportVideo: (request: unknown) => ipcRenderer.invoke("export:video", request),
+  exportAss: (request: unknown) => ipcRenderer.invoke("export:ass", request),
   onExportProgress: (callback: (text: string) => void) => {
     const listener = (_event: unknown, text: string) => callback(text);
     ipcRenderer.on("export:progress", listener);

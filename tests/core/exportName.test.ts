@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportPartPath, mp4FileName } from "../../src/core/exportName";
+import { assFileName, exportPartPath, mp4FileName } from "../../src/core/exportName";
 
 describe("匯出檔名", () => {
   it("預設用歌名", () => {
@@ -7,6 +7,9 @@ describe("匯出檔名", () => {
     expect(mp4FileName("  live / 版? ")).toBe("live 版.mp4");
     expect(mp4FileName("")).toBe("歌詞影片.mp4");
     expect(mp4FileName("結尾.")).toBe("結尾.mp4");
+    expect(assFileName("七里香")).toBe("七里香.ass");
+    expect(assFileName("  live / 版? ")).toBe("live 版.ass");
+    expect(assFileName("")).toBe("歌詞影片.ass");
   });
 
   it("暫存檔以 .mp4 結尾，檔名不以點開頭", () => {

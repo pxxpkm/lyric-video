@@ -32,6 +32,17 @@ export type LyricBridge = {
   }) => Promise<
     { ok: true; outPath: string; assPath: string } | { ok: false; error: string; cancelled?: boolean }
   >;
+  exportAss: (request: {
+    projectPath: string;
+    mediaPath: string;
+    mode: PreviewSession["mode"];
+    durationMs: number;
+    lines: PreviewSession["lines"];
+    timing: PreviewSession["timing"];
+    look: PreviewSession["look"];
+    motion: PreviewSession["motion"];
+    title: string;
+  }) => Promise<{ ok: true; outPath: string } | { ok: false; error: string; cancelled?: boolean }>;
   onExportProgress: (callback: (text: string) => void) => () => void;
   getSettings: () => Promise<{ showTrans: boolean; traditional: true; romaji: false }>;
   setShowTrans: (showTrans: boolean) => Promise<{ showTrans: boolean }>;

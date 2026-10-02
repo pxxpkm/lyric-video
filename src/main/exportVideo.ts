@@ -30,17 +30,7 @@ export async function exportProject(
   const folder = dirname(request.projectPath);
   await mkdir(folder, { recursive: true });
   const assPath = join(folder, "karaoke.ass");
-  const lines = request.lines.map((line) =>
-    lyricLine(line.atMs, line.text, {
-      translatedText: line.trans || null,
-      words: line.words.length > 0 ? line.words : null,
-    }),
-  ) satisfies LyricLine[];
-  await writeFile(
-    assPath,
-    buildKaraokeAss(lines, timingFromProject(request.timing), clampLook(request.look), request.motion ?? []),
-    "utf8",
-  );
+  await writeFile(assPath, karaokeAssDocument(request), "utf8");
 
   const outPath = request.outPath;
   await mkdir(dirname(outPath), { recursive: true });
@@ -122,6 +112,31 @@ export async function exportProject(
   await rename(part, outPath);
   onProgress("匯出完成");
   return { ok: true, outPath, assPath };
+}
+
+/** 同燒進 MP4 的那份字幕。呼叫端決定寫去邊。 */
+export function karaokeAssDocument(request: Pick<ExportRequest, "lines" | "timing" | "look" | "motion">): string {
+  const lines = request.lines.map((line) =>
+    lyricLine(line.atMs, line.text, {
+      translatedText: line.trans || null,
+      words: line.words.length > 0 ? line.words : null,
+    }),
+  ) satisfies LyricLine[];
+  return buildKaraokeAss(lines, timingFromProject(request.timing), clampLook(request.look), request.motion ?? []);
+}
+
+export async function saveAssFile(
+  outPath: string,
+  request: Pick<ExportRequest, "lines" | "timing" | "look" | "motion">,
+): Promise<{ ok: true; outPath: string } | { ok: false; error: string }> {
+  const path = outPath.toLowerCase().endsWith(".ass") ? outPath : `${outPath}.ass`;
+  try {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, karaokeAssDocument(request), "utf8");
+    return { ok: true, outPath: path };
+  } catch {
+    return { ok: false, error: "ASS 未能寫入" };
+  }
 }
 
 const SAFE_ASS_PATH = /^[A-Za-z0-9._/-]+$/;

@@ -124,8 +124,19 @@ main.studio .status {
   padding-bottom: 0;
 }
 
+.stage-actions .exports {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .stage-actions .export {
   margin-left: auto;
+}
+
+.stage-actions .exports .export {
+  margin-left: 0;
 }
 
 .readout {
@@ -244,6 +255,7 @@ main.studio .status {
     grid-template-columns: 1fr;
   }
 
+  .stage-actions .exports,
   .stage-actions .export {
     margin-left: 0;
   }

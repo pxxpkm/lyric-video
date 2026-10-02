@@ -1,8 +1,8 @@
 import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { mp4FileName } from "../core/exportName";
-import { exportProject, type ExportRequest } from "./exportVideo";
+import { assFileName, mp4FileName } from "../core/exportName";
+import { exportProject, saveAssFile, type ExportRequest } from "./exportVideo";
 import { resourceRoot } from "./paths";
 import { browseProject, matchProject, useCandidate } from "./matchLyrics";
 import { enqueueFile, enqueueTest, enqueueUrls, listJobs, openJob } from "./queue";
@@ -123,6 +123,26 @@ export function registerImportIpc(): void {
       });
       if (result.ok) await shell.openPath(result.outPath);
       return result;
+    } finally {
+      exportBusy = false;
+    }
+  });
+  ipcMain.handle("export:ass", async (event: IpcMainInvokeEvent, body: unknown) => {
+    const request = exportRequest(body);
+    if (!request) return { ok: false, error: "沒有可匯出的歌詞" };
+    if (request.lines.length === 0) return { ok: false, error: "沒有可匯出的歌詞" };
+    if (exportBusy) return { ok: false, error: "另一條正在匯出" };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const dialogOptions = {
+      title: "輸出 ASS",
+      defaultPath: join(dirname(request.projectPath), assFileName(request.title)),
+      filters: [{ name: "ASS", extensions: ["ass"] }],
+    };
+    const picked = win ? await dialog.showSaveDialog(win, dialogOptions) : await dialog.showSaveDialog(dialogOptions);
+    if (picked.canceled || !picked.filePath) return { ok: false, cancelled: true };
+    exportBusy = true;
+    try {
+      return await saveAssFile(picked.filePath, request);
     } finally {
       exportBusy = false;
     }

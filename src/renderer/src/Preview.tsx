@@ -65,6 +65,7 @@ export function Preview({
   const [debug, setDebug] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [savingAss, setSavingAss] = useState(false);
   const [exportText, setExportText] = useState("");
   const [pos, setPos] = useState(0);
   const [duration, setDuration] = useState(session.durationMs / 1000);
@@ -161,21 +162,25 @@ export function Preview({
     void media.play();
   }
 
+  function exportBody() {
+    return {
+      projectPath: session.projectPath,
+      mediaPath: session.mediaPath,
+      mode: session.mode,
+      durationMs: session.durationMs,
+      lines: showTrans ? session.lines : session.lines.map((line) => ({ ...line, trans: "" })),
+      timing: timingForProject(timing),
+      look,
+      motion: clips,
+      title: session.title,
+    };
+  }
+
   async function exportVideo() {
     setExporting(true);
     setExportText("正在寫字幕");
     try {
-      const result = await window.lyric.exportVideo({
-        projectPath: session.projectPath,
-        mediaPath: session.mediaPath,
-        mode: session.mode,
-        durationMs: session.durationMs,
-        lines: showTrans ? session.lines : session.lines.map((line) => ({ ...line, trans: "" })),
-        timing: timingForProject(timing),
-        look,
-        motion: clips,
-        title: session.title,
-      });
+      const result = await window.lyric.exportVideo(exportBody());
       if ("cancelled" in result && result.cancelled) {
         setExportText("");
         return;
@@ -185,6 +190,23 @@ export function Preview({
       setExportText("匯出失敗");
     } finally {
       setExporting(false);
+    }
+  }
+
+  async function exportAss() {
+    setSavingAss(true);
+    setExportText("正在寫字幕");
+    try {
+      const result = await window.lyric.exportAss(exportBody());
+      if ("cancelled" in result && result.cancelled) {
+        setExportText("");
+        return;
+      }
+      setExportText(result.ok ? result.outPath : result.error);
+    } catch {
+      setExportText("ASS 未能寫入");
+    } finally {
+      setSavingAss(false);
     }
   }
 
@@ -332,14 +354,19 @@ export function Preview({
                 <input type="checkbox" checked={debug} onChange={(event) => setDebug(event.target.checked)} />
                 時間讀數
               </label>
-              <button
-                type="button"
-                className="export"
-                disabled={!hasLyrics || exporting || !session.mediaPath}
-                onClick={() => void exportVideo()}
-              >
-                {exporting ? "正在匯出" : "匯出 MP4"}
-              </button>
+              <div className="exports">
+                <button type="button" disabled={!hasLyrics || exporting || savingAss} onClick={() => void exportAss()}>
+                  {savingAss ? "正在寫 ASS" : "輸出 ASS"}
+                </button>
+                <button
+                  type="button"
+                  className="export"
+                  disabled={!hasLyrics || exporting || savingAss || !session.mediaPath}
+                  onClick={() => void exportVideo()}
+                >
+                  {exporting ? "正在匯出" : "匯出 MP4"}
+                </button>
+              </div>
             </div>
             {exportText ? <p className="meta">{exportText}</p> : null}
           </div>

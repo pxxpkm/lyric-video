@@ -2,7 +2,9 @@ import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/p
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assFontsDirPlan, ensureExportFonts } from "../../src/main/exportVideo";
+import { defaultTiming } from "../../src/core/timing";
+import { timingForProject } from "../../src/core/projectTiming";
+import { assFontsDirPlan, ensureExportFonts, karaokeAssDocument, saveAssFile } from "../../src/main/exportVideo";
 
 const dirs: string[] = [];
 
@@ -15,6 +17,24 @@ async function tempDir(): Promise<string> {
   dirs.push(dir);
   return dir;
 }
+
+describe("輸出 ASS", () => {
+  it("寫去揀定的路徑，內容同燒進影片的字幕", async () => {
+    const dir = await tempDir();
+    const request = {
+      lines: [{ atMs: 1000, text: "第一句", trans: "譯", words: [] }],
+      timing: timingForProject(defaultTiming()),
+      motion: [],
+    };
+    const text = karaokeAssDocument(request);
+    expect(text).toContain("第一句");
+    const saved = await saveAssFile(join(dir, "歌"), request);
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+    expect(saved.outPath.endsWith(`${join(dir, "歌")}.ass`)).toBe(true);
+    expect(await readFile(saved.outPath, "utf8")).toBe(text);
+  });
+});
 
 describe("assFontsDirPlan", () => {
   it("開發時字體在專案裡，濾鏡用沒有空格的相對路徑", () => {

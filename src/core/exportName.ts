@@ -6,12 +6,20 @@ export function exportPartPath(outPath: string): string {
   return join(dirname(outPath), `${base}.part${ext}`);
 }
 
-export function mp4FileName(title: string | null | undefined): string {
+function exportStem(title: string | null | undefined): string {
   const cleaned = (title ?? "")
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[. ]+$/g, "");
   const base = [...cleaned].slice(0, 80).join("").trim();
-  return `${base || "歌詞影片"}.mp4`;
+  return base || "歌詞影片";
+}
+
+export function mp4FileName(title: string | null | undefined): string {
+  return `${exportStem(title)}.mp4`;
+}
+
+export function assFileName(title: string | null | undefined): string {
+  return `${exportStem(title)}.ass`;
 }
