@@ -25,16 +25,24 @@ export function SeekBar({
     let frame = 0;
     let stopped = false;
     let lastSent = 0;
+    let lastDraw = 0;
+    let due = true;
     const tick = () => {
       if (stopped) return;
       const node = videoRef.current ?? audioRef.current;
       const dur = readDuration(node, fallbackSec);
       const time = node?.currentTime ?? 0;
-      if (!drag.current && fillRef.current) {
-        fillRef.current.style.width = dur > 0 ? `${Math.min(100, (time / dur) * 100)}%` : "0%";
-      }
-      if (labelRef.current) labelRef.current.textContent = `${clock(time)} / ${clock(dur)}`;
       const now = performance.now();
+      // 播放時唔好每幀改進度條寬度。跳時間同暫停仍然即刻對齊。
+      if (due || now - lastDraw >= 100) {
+        due = false;
+        lastDraw = now;
+        if (!drag.current && fillRef.current) {
+          fillRef.current.style.width = dur > 0 ? `${Math.min(100, (time / dur) * 100)}%` : "0%";
+        }
+        const label = `${clock(time)} / ${clock(dur)}`;
+        if (labelRef.current && labelRef.current.textContent !== label) labelRef.current.textContent = label;
+      }
       if (!drag.current && now - lastSent > 200) {
         lastSent = now;
         onTimeRef.current(time);
@@ -43,6 +51,7 @@ export function SeekBar({
     };
     const kick = () => {
       if (stopped) return;
+      due = true;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(tick);
     };

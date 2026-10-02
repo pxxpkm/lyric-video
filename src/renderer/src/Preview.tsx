@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
-import { drawPreview, hitsCurrentLyric, mediaKeepsPainting, sessionLines } from "./drawPreview";
+import { drawPreview, hitsCurrentLyric, mediaKeepsPainting, previewPaintKey, readoutFrame, sessionLines, shouldPaintPreview } from "./drawPreview";
 import { ShapePanel } from "./ShapePanel";
 import { TimingPanel } from "./TimingPanel";
 import { lyricClockMs, mediaMsForLyric, previewFrame } from "../../core/preview";
@@ -115,51 +115,71 @@ export function Preview({
   useEffect(() => {
     let frame = 0;
     let stopped = false;
-    const paint = () => {
+    let forceNext = true;
+    let lastKey: string | null = null;
+    let lastAt = 0;
+    let lastRead = 0;
+    const writeReadout = (posMs: number, painted: ReturnType<typeof drawPreview> | null, paintedNow: boolean) => {
+      const read = readRef.current;
+      if (!read) return;
+      const show = debugRef.current;
+      if (read.hidden === show) read.hidden = !show;
+      if (!show) return;
+      const now = performance.now();
+      if (!paintedNow && now - lastRead < 200) return;
+      const timingNow = timingRef.current;
+      const shown = painted ?? readoutFrame(linesRef.current, posMs, timingNow);
+      lastRead = now;
+      const lyricMs = lyricClockMs(posMs, timingNow.offsetMs, timingNow.rate);
+      const lineMs = mediaMsForLyric(shown.atMs, timingNow.offsetMs, timingNow.rate);
+      const cells = read.querySelectorAll("span");
+      const next = [
+        `播放 ${readClock(posMs)}`,
+        `歌詞 ${readClock(lyricMs)}`,
+        `呢句 ${shown.text ? readClock(lineMs) : "—"}`,
+        `第 ${shown.wordIndex >= 0 ? shown.wordIndex + 1 : "—"} 字`,
+      ];
+      cells.forEach((cell, index) => {
+        if (cell.textContent !== next[index]) cell.textContent = next[index];
+      });
+    };
+    const paint = (now: number) => {
       const canvas = canvasRef.current;
       const media = activeMedia(videoRef.current, audioRef.current);
       const posMs = media ? media.currentTime * 1000 : 0;
-      const painted = canvas
-        ? drawPreview(
-            canvas,
-            linesRef.current,
-            posMs,
-            session.mode,
-            timingRef.current,
-            lookRef.current,
-            clipsRef.current,
-          )
+      const key = previewPaintKey(
+        linesRef.current,
+        posMs,
+        session.mode,
+        timingRef.current,
+        lookRef.current,
+        clipsRef.current,
+        canvas?.clientWidth ?? 0,
+        canvas?.clientHeight ?? 0,
+      );
+      const forced = forceNext;
+      forceNext = false;
+      // 字停住就唔好清畫布。郁緊先隔大約 33 毫秒畫一次。跳時間、拖、改外觀會即刻畫。
+      const paintedNow = canvas != null && shouldPaintPreview({ now, lastAt, key, previousKey: lastKey, forced });
+      const painted = paintedNow
+        ? drawPreview(canvas, linesRef.current, posMs, session.mode, timingRef.current, lookRef.current, clipsRef.current)
         : null;
-      const read = readRef.current;
-      if (read) {
-        const show = debugRef.current;
-        read.hidden = !show;
-        if (show && painted) {
-          const timingNow = timingRef.current;
-          const lyricMs = lyricClockMs(posMs, timingNow.offsetMs, timingNow.rate);
-          const lineMs = mediaMsForLyric(painted.atMs, timingNow.offsetMs, timingNow.rate);
-          const cells = read.querySelectorAll("span");
-          const next = [
-            `播放 ${readClock(posMs)}`,
-            `歌詞 ${readClock(lyricMs)}`,
-            `呢句 ${painted.text ? readClock(lineMs) : "—"}`,
-            `第 ${painted.wordIndex >= 0 ? painted.wordIndex + 1 : "—"} 字`,
-          ];
-          cells.forEach((cell, index) => {
-            if (cell.textContent !== next[index]) cell.textContent = next[index];
-          });
-        }
+      if (paintedNow) {
+        lastKey = key;
+        lastAt = now;
       }
+      writeReadout(posMs, painted, paintedNow);
     };
-    const loop = () => {
+    const loop = (now: number) => {
       if (stopped) return;
-      paint();
+      paint(now);
       const media = activeMedia(videoRef.current, audioRef.current);
       // 暫停再排下一幀的話，視窗返到最前都仍然每幀佔 GPU。
       if (dragRef.current != null || mediaKeepsPainting(media)) frame = requestAnimationFrame(loop);
     };
     const kick = () => {
       if (stopped) return;
+      forceNext = true;
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(loop);
     };

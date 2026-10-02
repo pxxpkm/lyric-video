@@ -4,7 +4,14 @@ import { defaultTiming } from "../../src/core/timing";
 import { defaultLook, fitPercent, fitUsed, playHeight, playWidth, softBlur } from "../../src/core/lyricLook";
 import { setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
-import { drawPreview, hitsCurrentLyric, mediaKeepsPainting } from "../../src/renderer/src/drawPreview";
+import {
+  drawPreview,
+  hitsCurrentLyric,
+  mediaKeepsPainting,
+  previewPaintGapMs,
+  previewPaintKey,
+  shouldPaintPreview,
+} from "../../src/renderer/src/drawPreview";
 
 function alphasAt(lines: LyricLine[], mediaMs: number, clips: MotionClip[] = []): { text: string; alpha: number }[] {
   const host = globalThis as { window?: { devicePixelRatio: number } };
@@ -342,5 +349,61 @@ describe("預覽暫停就停畫", () => {
     expect(mediaKeepsPainting({ paused: true, ended: true })).toBe(false);
     expect(mediaKeepsPainting({ paused: false, ended: false })).toBe(true);
     expect(mediaKeepsPainting({ paused: false, ended: true })).toBe(false);
+  });
+});
+
+function paintKey(lines: LyricLine[], mediaMs: number, clips: MotionClip[] = [], width = 1920, height = 1080): string {
+  return previewPaintKey(lines, mediaMs, "video", defaultTiming(), defaultLook, clips, width, height);
+}
+
+describe("播放中字停住就唔重畫", () => {
+  it("句中間相差一秒都係同一畫面", () => {
+    const lines = testClipLines();
+    expect(paintKey(lines, 1_800)).toBe(paintKey(lines, 2_200));
+  });
+
+  it("相差一毫秒仍然同一畫面", () => {
+    const lines = testClipLines();
+    expect(paintKey(lines, 2_000)).toBe(paintKey(lines, 2_001));
+  });
+
+  it("飛入開頭同停低唔同", () => {
+    const lines = testClipLines();
+    const line = lines[0];
+    const clips = setLinePreset([], lineKey(line), line.text, 1_000, 3_000, "fly");
+    expect(paintKey(lines, 1_060, clips)).not.toBe(paintKey(lines, 2_000, clips));
+  });
+
+  it("句頭淡入同中間唔同", () => {
+    const lines = testClipLines();
+    expect(paintKey(lines, 1_000)).not.toBe(paintKey(lines, 1_500));
+  });
+
+  it("逐字變色先至換畫面", () => {
+    const lines = testClipLines();
+    expect(paintKey(lines, 6_100)).not.toBe(paintKey(lines, 6_500));
+  });
+
+  it("裝飾小點郁咗就換畫面", () => {
+    const lines = testClipLines();
+    const line = lines[0];
+    const clips = setLinePreset([], lineKey(line), line.text, 1_000, 3_000, "dust");
+    expect(paintKey(lines, 1_200, clips)).not.toBe(paintKey(lines, 2_500, clips));
+  });
+
+  it("畫面大細變兩點或以上就換畫面", () => {
+    const lines = testClipLines();
+    expect(paintKey(lines, 2_000, [], 1920, 1080)).not.toBe(paintKey(lines, 2_000, [], 1280, 720));
+    expect(paintKey(lines, 2_000, [], 1920, 1080)).toBe(paintKey(lines, 2_000, [], 1921, 1081));
+    expect(paintKey(lines, 2_000, [], 1920, 1080)).not.toBe(paintKey(lines, 2_000, [], 1922, 1080));
+  });
+
+  it("冇變就唔畫，變緊先至隔一段畫，被踢就即刻畫", () => {
+    const still = paintKey(testClipLines(), 2_000);
+    expect(shouldPaintPreview({ now: 100, lastAt: 90, key: still, previousKey: null, forced: false })).toBe(true);
+    expect(shouldPaintPreview({ now: 100, lastAt: 90, key: still, previousKey: still, forced: false })).toBe(false);
+    expect(shouldPaintPreview({ now: 100, lastAt: 90, key: still, previousKey: still, forced: true })).toBe(true);
+    expect(shouldPaintPreview({ now: 100, lastAt: 90, key: "飛", previousKey: still, forced: false })).toBe(false);
+    expect(shouldPaintPreview({ now: 90 + previewPaintGapMs, lastAt: 90, key: "飛", previousKey: still, forced: false })).toBe(true);
   });
 });

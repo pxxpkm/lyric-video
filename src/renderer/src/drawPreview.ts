@@ -85,6 +85,135 @@ export function mediaKeepsPainting(media: { paused: boolean; ended: boolean } | 
   return media != null && !media.paused && !media.ended;
 }
 
+/** 淡入、飛入、裝飾真係郁緊先至再畫。大約每秒三十次，唔跟 144Hz 清畫布。 */
+export const previewPaintGapMs = 33;
+
+export function readoutFrame(lines: LyricLine[], mediaMs: number, timing: TrackTiming = defaultTiming()): PreviewFrame {
+  return previewFrame(applyEdits(lines, timing), lyricClockMs(mediaMs, timing.offsetMs, timing.rate), timing);
+}
+
+/** 同一把匙就係同一幅歌詞。停低的一句唔會因為播多一毫秒而變。 */
+export function previewPaintKey(
+  lines: LyricLine[],
+  mediaMs: number,
+  mode: "video" | "audio",
+  timing: TrackTiming = defaultTiming(),
+  look: LyricLook = defaultLook,
+  clips: MotionClip[] = [],
+  width = 0,
+  height = 0,
+): string {
+  const shown = applyEdits(lines, timing);
+  const frame = previewFrame(shown, lyricClockMs(mediaMs, timing.offsetMs, timing.rate), timing);
+  const placed = linePlacement(clips, frame.key, mediaMs, look, shown, timing);
+  const translated = transPlacement(clips, frame.key, mediaMs, look, shown, timing);
+  return JSON.stringify([
+    mode,
+    sizeBucket(width),
+    sizeBucket(height),
+    bucket(pixelRatio(), 0.01),
+    lookStamp(look),
+    frame.key,
+    frame.wordIndex,
+    frame.text,
+    frame.trans,
+    motionStamp(placed),
+    motionStamp({ ...translated, opacity: placed.opacity }),
+    decorStamp(shown, frame, mediaMs, timing, look, clips),
+  ]);
+}
+
+/** 冇變就唔畫。變緊先隔一段畫。跳時間、拖、改外觀、字體載入要即刻畫，所以 forced 唔受間隔限制。 */
+export function shouldPaintPreview(input: {
+  now: number;
+  lastAt: number;
+  key: string;
+  previousKey: string | null;
+  forced: boolean;
+}): boolean {
+  if (input.previousKey == null || input.forced) return true;
+  if (input.key === input.previousKey) return false;
+  return input.now - input.lastAt >= previewPaintGapMs;
+}
+
+function pixelRatio(): number {
+  if (typeof window === "undefined") return 1;
+  const ratio = window.devicePixelRatio;
+  return typeof ratio === "number" && Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+}
+
+function bucket(value: number, step: number): number {
+  if (!Number.isFinite(value) || !(step > 0)) return 0;
+  return Math.round(value / step);
+}
+
+/** 少過兩點的來回跳動唔當另一幅圖，同視窗觀察的門檻一樣。 */
+function sizeBucket(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.floor(value / 2);
+}
+
+function lookStamp(look: LyricLook): string {
+  return [
+    look.font,
+    look.size,
+    look.color,
+    look.sungColor,
+    look.outline,
+    look.outlineColor,
+    look.transFont,
+    look.transSize,
+    look.transColor,
+    look.flow,
+    bucket(look.x, 1 / 1080),
+    bucket(look.y, 1 / 1080),
+    bucket(look.transX, 1 / 1080),
+    bucket(look.transY, 1 / 1080),
+    look.tracking,
+    lyricBlur(look.soft, look.softBlur),
+  ].join(",");
+}
+
+function motionStamp(placed: Placed): string {
+  return [
+    bucket(placed.x, 1 / 1080),
+    bucket(placed.y, 1 / 1080),
+    bucket(placed.opacity, 0.02),
+    bucket(placed.scale, 0.01),
+    bucket(placed.deg, 0.1),
+    bucket(placed.tint, 0.02),
+  ].join(",");
+}
+
+function decorStamp(
+  shown: LyricLine[],
+  frame: PreviewFrame,
+  mediaMs: number,
+  timing: TrackTiming,
+  look: LyricLook,
+  clips: MotionClip[],
+): string {
+  const preset = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset;
+  if (!frame.text || !isDecor(preset)) return "";
+  const span = mediaSpans(shown, timing).get(frame.key);
+  if (!span) return "";
+  const upright = isVerticalFlow(look.flow);
+  const rest = restAnchors(clips, frame.key, look);
+  const origUsed = fitted(frame.text, look.size, look, upright ? rest.y : rest.x, upright);
+  const dots = sampleDecor(preset, mediaMs, span.startMs, span.endMs, decorLayout(frame.text, look.size, upright, origUsed));
+  const parts = dots.map(dotStamp);
+  if (frame.trans) {
+    const transUsed = fitted(frame.trans, look.transSize, look, upright ? rest.transY : rest.transX, upright);
+    const extra = sampleDecor(preset, mediaMs, span.startMs, span.endMs, decorLayout(frame.trans, look.transSize, upright, transUsed));
+    parts.push(...extra.map(dotStamp));
+  }
+  return parts.join(";");
+}
+
+function dotStamp(dot: { x: number; y: number; opacity: number; size: number }): string {
+  return `${Math.round(dot.x)},${Math.round(dot.y)},${bucket(dot.opacity, 0.02)},${Math.round(dot.size)}`;
+}
+
 export function drawPreview(
   canvas: HTMLCanvasElement,
   lines: LyricLine[],
