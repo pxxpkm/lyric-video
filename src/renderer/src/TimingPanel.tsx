@@ -8,6 +8,7 @@ import {
   replaceShown,
   type LyricLine,
 } from "../../core/lyrics";
+import { undoTiming } from "../../core/preview";
 import {
   MAX_MS,
   MIN_MS,
@@ -16,7 +17,9 @@ import {
   RATE_STEP,
   formatHold,
   formatOffset,
+  hideLine,
   repeatAdjustment,
+  sameTiming,
   withAdded,
   withLineHold,
   withLineShift,
@@ -36,6 +39,7 @@ export function TimingPanel({
   onSelect,
   onReplace,
   onReplay,
+  hotkeys,
 }: {
   baseLines: LyricLine[];
   timing: TrackTiming;
@@ -44,82 +48,166 @@ export function TimingPanel({
   onSelect: (key: string) => void;
   onReplace: (recipe: (current: TrackTiming) => TrackTiming) => void;
   onReplay: (line: LyricLine) => void;
+  hotkeys: boolean;
 }) {
   const shown = useMemo(() => applyEdits(baseLines, timing), [baseLines, timing]);
   const [lrc, setLrc] = useState("");
   const [offsetPast, setOffsetPast] = useState<number[]>([]);
   const [ratePast, setRatePast] = useState<number[]>([]);
+  const [past, setPast] = useState<TrackTiming[]>([]);
   const timingRef = useRef(timing);
+  const pastRef = useRef(past);
   const selectedKeyRef = useRef(selectedKey);
-  const gesture = useRef<"offset" | "rate" | null>(null);
+  const gesture = useRef<"offset" | "rate" | "line" | "hold" | null>(null);
+  const composing = useRef(false);
+  const composeBase = useRef<TrackTiming | null>(null);
+  const skipRecord = useRef(false);
   timingRef.current = timing;
+  pastRef.current = past;
   selectedKeyRef.current = selectedKey;
   const selected = shown.find((line) => lineKey(line) === selectedKey) ?? null;
   const selectedShift = selected ? (timing.lines?.[lineKey(selected)] ?? 0) : 0;
   const selectedHold = selected ? (timing.holds?.[lineKey(selected)] ?? 0) : 0;
 
-  function apply(next: TrackTiming) {
-    onReplace(() => next);
+  function pushPast(snapshot: TrackTiming) {
+    const stack = pastRef.current;
+    const top = stack[stack.length - 1];
+    if (top && sameTiming(top, snapshot)) return;
+    const nextStack = [...stack, snapshot].slice(-40);
+    pastRef.current = nextStack;
+    setPast(nextStack);
   }
 
+  // 歷史喺 setState 外面推。Strict Mode 會用同一個狀態呼叫更新兩次。
+  function write(recipe: (current: TrackTiming) => TrackTiming, record: "yes" | "no" | "offset" | "rate" | "line" | "hold"): "skip" | "first" | "more" {
+    const current = timingRef.current;
+    const next = recipe(current);
+    if (sameTiming(current, next)) return "skip";
+    const hold = record === "offset" || record === "rate" || record === "line" || record === "hold";
+    const first = !hold || gesture.current !== record;
+    if (record === "yes" || (hold && first)) pushPast(current);
+    if (hold) gesture.current = record;
+    timingRef.current = next;
+    onReplace(() => next);
+    return first ? "first" : "more";
+  }
+
+  function undo() {
+    const undone = undoTiming(pastRef.current, timingRef.current);
+    if (undone.past === pastRef.current) return;
+    pastRef.current = undone.past;
+    setPast(undone.past);
+    gesture.current = null;
+    timingRef.current = undone.current;
+    onReplace(() => undone.current);
+  }
+
+  function removeSelected() {
+    const key = selectedKeyRef.current;
+    if (!key) return;
+    write((current) => hideLine(current, key), "yes");
+  }
+
+  const undoRef = useRef(undo);
+  const removeRef = useRef(removeSelected);
+  undoRef.current = undo;
+  removeRef.current = removeSelected;
+
+  useEffect(() => {
+    if (!hotkeys) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.isComposing) return;
+      const target = event.target;
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "z") {
+        if (target instanceof HTMLTextAreaElement) return;
+        event.preventDefault();
+        undoRef.current();
+        return;
+      }
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+      if (!selectedKeyRef.current) return;
+      event.preventDefault();
+      removeRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hotkeys]);
+
   function stepOffset(delta: number) {
-    let from: number | null = null;
-    onReplace((current) => {
+    const before = timingRef.current.offsetMs;
+    const outcome = write((current) => {
       const offsetMs = clamp(current.offsetMs + delta, MIN_MS, MAX_MS);
       if (offsetMs === current.offsetMs) return current;
-      if (gesture.current !== "offset") from = current.offsetMs;
-      timingRef.current = { ...current, offsetMs };
-      return timingRef.current;
-    });
-    if (from !== null) {
-      gesture.current = "offset";
-      const saved = from;
-      setOffsetPast((stack) => [...stack, saved].slice(-40));
-    }
+      return { ...current, offsetMs };
+    }, "offset");
+    if (outcome === "first") setOffsetPast((stack) => [...stack, before].slice(-40));
   }
 
   function stepRate(delta: number) {
-    let from: number | null = null;
-    onReplace((current) => {
+    const before = timingRef.current.rate;
+    const outcome = write((current) => {
       const rate = clampRate(current.rate + delta);
       if (rate === current.rate) return current;
-      if (gesture.current !== "rate") from = current.rate;
-      timingRef.current = { ...current, rate };
-      return timingRef.current;
-    });
-    if (from !== null) {
-      gesture.current = "rate";
-      const saved = from;
-      setRatePast((stack) => [...stack, saved].slice(-40));
-    }
+      return { ...current, rate };
+    }, "rate");
+    if (outcome === "first") setRatePast((stack) => [...stack, before].slice(-40));
   }
 
   function stepLine(delta: number) {
     const key = selectedKeyRef.current;
     if (!key) return;
-    onReplace((current) => withLineShift(current, key, (current.lines?.[key] ?? 0) + delta));
+    write((current) => withLineShift(current, key, (current.lines?.[key] ?? 0) + delta), "line");
   }
 
   function stepHold(delta: number) {
     const key = selectedKeyRef.current;
     if (!key) return;
-    onReplace((current) => withLineHold(current, key, (current.holds?.[key] ?? 0) + delta));
+    write((current) => withLineHold(current, key, (current.holds?.[key] ?? 0) + delta), "hold");
   }
 
   function endGesture() {
     gesture.current = null;
   }
 
-  function pushOffset(next: number) {
-    if (next === timing.offsetMs) return;
-    setOffsetPast((stack) => [...stack, timing.offsetMs].slice(-40));
-    onReplace((current) => ({ ...current, offsetMs: next }));
+  function pushOffset(nextMs: number) {
+    const before = timingRef.current.offsetMs;
+    const outcome = write((current) => (current.offsetMs === nextMs ? current : { ...current, offsetMs: nextMs }), "yes");
+    if (outcome !== "skip") setOffsetPast((stack) => [...stack, before].slice(-40));
   }
 
-  function pushRate(next: number) {
-    if (next === timing.rate) return;
-    setRatePast((stack) => [...stack, timing.rate].slice(-40));
-    onReplace((current) => ({ ...current, rate: next }));
+  function pushRate(nextRate: number) {
+    const before = timingRef.current.rate;
+    const outcome = write((current) => (current.rate === nextRate ? current : { ...current, rate: nextRate }), "yes");
+    if (outcome !== "skip") setRatePast((stack) => [...stack, before].slice(-40));
+  }
+
+  function editLine(kind: "text" | "trans", key: string, value: string, isComposing: boolean) {
+    const recipe = (current: TrackTiming) => (kind === "text" ? withLineText(current, key, value) : withLineTrans(current, key, value));
+    if (isComposing || composing.current) {
+      if (composeBase.current == null) composeBase.current = timingRef.current;
+      composing.current = true;
+      write(recipe, "no");
+      return;
+    }
+    if (skipRecord.current) {
+      skipRecord.current = false;
+      write(recipe, "no");
+      return;
+    }
+    write(recipe, "yes");
+  }
+
+  function finishCompose() {
+    composing.current = false;
+    const base = composeBase.current;
+    composeBase.current = null;
+    if (!base || sameTiming(base, timingRef.current)) return;
+    pushPast(base);
+    skipRecord.current = true;
+    queueMicrotask(() => {
+      skipRecord.current = false;
+    });
   }
 
   return (
@@ -139,7 +227,7 @@ export function TimingPanel({
           onClick={() => {
             const previous = offsetPast[offsetPast.length - 1];
             setOffsetPast((stack) => stack.slice(0, -1));
-            apply({ ...timing, offsetMs: previous });
+            write((current) => ({ ...current, offsetMs: previous }), "no");
           }}
         >
           <UndoIcon />
@@ -159,7 +247,7 @@ export function TimingPanel({
           onClick={() => {
             const previous = ratePast[ratePast.length - 1];
             setRatePast((stack) => stack.slice(0, -1));
-            apply({ ...timing, rate: previous });
+            write((current) => ({ ...current, rate: previous }), "no");
           }}
         >
           <UndoIcon />
@@ -170,9 +258,9 @@ export function TimingPanel({
       <div className="timing-edit">
       <div className="row">
         <span className="meta">呢句</span>
-        <RepeatButton label="−" title="歌詞慢了" kind="ms" sign={-1} disabled={!selected} onStep={stepLine} />
+        <RepeatButton label="−" title="歌詞慢了" kind="ms" sign={-1} disabled={!selected} onStep={stepLine} onRelease={endGesture} />
         <span className="meta read">{formatOffset(selectedShift)}</span>
-        <RepeatButton label="＋" title="歌詞快了" kind="ms" sign={1} disabled={!selected} onStep={stepLine} />
+        <RepeatButton label="＋" title="歌詞快了" kind="ms" sign={1} disabled={!selected} onStep={stepLine} onRelease={endGesture} />
         <IconButton label="重播" disabled={!selected} onClick={() => selected && onReplay(selected)}>
           <ReplayIcon />
         </IconButton>
@@ -180,16 +268,44 @@ export function TimingPanel({
           type="button"
           className="tiny"
           disabled={!selected}
-          onClick={() => selected && apply(withoutLine(timing, lineKey(selected)))}
+          onClick={() => selected && write((current) => withoutLine(current, lineKey(selected)), "yes")}
         >
           重設呢句
+        </button>
+        <button
+          type="button"
+          className="tiny"
+          title="Delete。原句會藏起，插入句會拿走。"
+          disabled={!selected}
+          onClick={removeSelected}
+        >
+          刪除呢句
+        </button>
+        <button type="button" className="tiny" title="Ctrl+Z" disabled={past.length === 0} onClick={undo}>
+          上一步
         </button>
       </div>
       <div className="row">
         <span className="meta">停留</span>
-        <RepeatButton label="−" title="短 0.25 秒，按住會連續減" kind="stay" sign={-1} disabled={!selected} onStep={stepHold} />
+        <RepeatButton
+          label="−"
+          title="短 0.25 秒，按住會連續減"
+          kind="stay"
+          sign={-1}
+          disabled={!selected}
+          onStep={stepHold}
+          onRelease={endGesture}
+        />
         <span className="meta read">{formatHold(selectedHold)}</span>
-        <RepeatButton label="＋" title="長 0.25 秒，按住會連續加" kind="stay" sign={1} disabled={!selected} onStep={stepHold} />
+        <RepeatButton
+          label="＋"
+          title="長 0.25 秒，按住會連續加"
+          kind="stay"
+          sign={1}
+          disabled={!selected}
+          onStep={stepHold}
+          onRelease={endGesture}
+        />
       </div>
       <div className="pair">
         <label>
@@ -198,11 +314,15 @@ export function TimingPanel({
             type="text"
             disabled={!selected}
             value={selected?.text ?? ""}
+            onCompositionStart={() => {
+              composing.current = true;
+              if (composeBase.current == null) composeBase.current = timingRef.current;
+            }}
+            onCompositionEnd={finishCompose}
             onChange={(event) => {
               if (!selected) return;
-              const key = lineKey(selected);
-              const value = event.target.value;
-              onReplace((current) => withLineText(current, key, value));
+              const native = event.nativeEvent;
+              editLine("text", lineKey(selected), event.target.value, native instanceof InputEvent && native.isComposing);
             }}
           />
         </label>
@@ -212,11 +332,15 @@ export function TimingPanel({
             type="text"
             disabled={!selected}
             value={selected?.translatedText ?? ""}
+            onCompositionStart={() => {
+              composing.current = true;
+              if (composeBase.current == null) composeBase.current = timingRef.current;
+            }}
+            onCompositionEnd={finishCompose}
             onChange={(event) => {
               if (!selected) return;
-              const key = lineKey(selected);
-              const value = event.target.value;
-              onReplace((current) => withLineTrans(current, key, value));
+              const native = event.nativeEvent;
+              editLine("trans", lineKey(selected), event.target.value, native instanceof InputEvent && native.isComposing);
             }}
           />
         </label>
@@ -225,12 +349,14 @@ export function TimingPanel({
         type="button"
         className="tiny"
         onClick={() =>
-          apply(
-            withAdded(timing, {
-              atMs: Math.max(0, Math.round(lyricMs)),
-              text: "新句",
-              id: crypto.randomUUID().replaceAll("-", "").slice(0, 8),
-            }),
+          write(
+            (current) =>
+              withAdded(current, {
+                atMs: Math.max(0, Math.round(lyricMs)),
+                text: "新句",
+                id: crypto.randomUUID().replaceAll("-", "").slice(0, 8),
+              }),
+            "yes",
           )
         }
       >
@@ -250,10 +376,12 @@ export function TimingPanel({
           onClick={() => {
             const tags = parseTimingTags(lrc);
             const clips = parseClipboardLyrics(lrc, 0);
-            const next = replaceShown(timing, baseLines, clips, tags.offsetMs, tags.rate);
-            if (next.offsetMs !== timing.offsetMs) setOffsetPast((stack) => [...stack, timing.offsetMs].slice(-40));
-            if (next.rate !== timing.rate) setRatePast((stack) => [...stack, timing.rate].slice(-40));
-            apply(next);
+            const current = timingRef.current;
+            const next = replaceShown(current, baseLines, clips, tags.offsetMs, tags.rate);
+            const outcome = write(() => next, "yes");
+            if (outcome === "skip") return;
+            if (next.offsetMs !== current.offsetMs) setOffsetPast((stack) => [...stack, current.offsetMs].slice(-40));
+            if (next.rate !== current.rate) setRatePast((stack) => [...stack, current.rate].slice(-40));
           }}
         >
           從欄套用

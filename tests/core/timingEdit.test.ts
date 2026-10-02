@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { applyEdits, lineDisplayEndMs, timeOfMs } from "../../src/core/lyrics";
+import { applyEdits, lineDisplayEndMs, lineKey, timeOfMs } from "../../src/core/lyrics";
 import { lyricClockMs, mediaMsForLyric, previewFrame, testClipLines, undoTiming } from "../../src/core/preview";
 import { exampleProject, parseProject } from "../../src/core/project";
 import { timingForProject, timingFromProject } from "../../src/core/projectTiming";
-import { defaultTiming, repeatAdjustment, withLineHold, withLineShift } from "../../src/core/timing";
+import { defaultTiming, hideLine, repeatAdjustment, sameTiming, withAdded, withLineHold, withLineShift, withoutLine } from "../../src/core/timing";
 
 describe("時機", () => {
   it("整首偏移和快慢改歌詞時鐘", () => {
@@ -46,6 +46,34 @@ describe("時機", () => {
     const undone = undoTiming([start], shifted);
     expect(undone.past).toEqual([]);
     expect(undone.current.lines).toBeNull();
+  });
+
+  it("刪除原句會藏起，刪除插入句會拿走，上一步拎返", () => {
+    const src = testClipLines();
+    const key = lineKey(src[0]);
+    const shifted = withLineShift(defaultTiming(), key, -50);
+    const hidden = hideLine(shifted, key);
+    expect(hidden.lines?.[key]).toBe(-50);
+    expect(hidden.texts?.[key]).toBe("");
+    expect(applyEdits(src, hidden).map((line) => line.text)).not.toContain("第一句");
+    expect(sameTiming(hidden, hideLine(hidden, key))).toBe(true);
+    const back = undoTiming([shifted], hidden);
+    expect(back.past).toEqual([]);
+    expect(applyEdits(src, back.current).map((line) => line.text)).toContain("第一句");
+    expect(applyEdits(src, withoutLine(hidden, key))[0].text).toBe("第一句");
+
+    const added = withAdded(defaultTiming(), { atMs: 2500, text: "加句", id: "ab12" });
+    const removed = hideLine(added, "add|ab12");
+    expect(removed.added).toBeNull();
+    expect(applyEdits(src, removed).some((line) => line.text === "加句")).toBe(false);
+    const restored = undoTiming([added], removed);
+    expect(applyEdits(src, restored.current).some((line) => line.text === "加句")).toBe(true);
+  });
+
+  it("到頂再加唔算改過", () => {
+    const maxed = withLineShift(defaultTiming(), "1000|第一句", 300_000);
+    const again = withLineShift(maxed, "1000|第一句", 300_050);
+    expect(sameTiming(maxed, again)).toBe(true);
   });
 
   it("寫進專案再讀出，50ms 還在", () => {

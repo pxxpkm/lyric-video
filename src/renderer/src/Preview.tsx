@@ -369,6 +369,7 @@ export function Preview({
                 })
               }
               onReplay={replay}
+              hotkeys={pane === "text"}
             />
           </div>
           <div className={pane === "shape" ? "pane" : "pane off"}>

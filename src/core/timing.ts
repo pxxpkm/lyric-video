@@ -152,6 +152,42 @@ export function withoutLine(t: TrackTiming, key: string): TrackTiming {
   return next;
 }
 
+/** 原句寫空字串就唔顯示。插入句的 key 以 add| 開頭，直接拿走。位移同外觀留住，上一步先至一齊返。 */
+export function hideLine(t: TrackTiming, key: string): TrackTiming {
+  if (key.startsWith("add|")) return withoutLine(t, key);
+  return withLineText(t, key, "");
+}
+
+function sameRecord<T>(a: Record<string, T> | null, b: Record<string, T> | null): boolean {
+  const left = a ?? {};
+  const right = b ?? {};
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((key) => Object.is(left[key], right[key]));
+}
+
+function sameAdded(a: AddedLyric[] | null, b: AddedLyric[] | null): boolean {
+  const left = a ?? [];
+  const right = b ?? [];
+  if (left.length !== right.length) return false;
+  return left.every((line, index) => {
+    const other = right[index];
+    return line.id === other.id && line.atMs === other.atMs && line.text === other.text && (line.trans ?? null) === (other.trans ?? null);
+  });
+}
+
+export function sameTiming(a: TrackTiming, b: TrackTiming): boolean {
+  return (
+    a.offsetMs === b.offsetMs &&
+    a.rate === b.rate &&
+    sameRecord(a.lines, b.lines) &&
+    sameRecord(a.holds, b.holds) &&
+    sameRecord(a.texts, b.texts) &&
+    sameRecord(a.trans, b.trans) &&
+    sameAdded(a.added, b.added)
+  );
+}
+
 export function stepForHoldMs(heldMs: number): number {
   if (heldMs < HOLD_DELAY_MS) return 0;
   if (heldMs < HOLD_ACCEL_MS) return STEP_MS;
