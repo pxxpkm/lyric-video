@@ -23,6 +23,8 @@ export type LyricLook = {
   y: number;
   transX: number;
   transY: number;
+  /** 字與字之間的額外空位，1080 畫面的像素。原文同譯文共用。0 就同未加之前一樣。 */
+  tracking: number;
 };
 
 /** 舊檔只有譯文比例、未有譯文字級時用。64 × 0.56 = 36。 */
@@ -42,6 +44,7 @@ export const defaultLook: LyricLook = {
   y: 0.82,
   transX: 0.5,
   transY: 0.82 + (64 * 1.25) / 1080,
+  tracking: 0,
 };
 
 const aliases: Record<string, string> = {
@@ -73,7 +76,19 @@ export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) 
     y: clamp(raw.y, 0.08, 0.94, defaultLook.y),
     transX: clamp(raw.transX, 0, 1, defaultLook.transX),
     transY: clamp(raw.transY, 0.08, 0.94, defaultLook.transY),
+    tracking: Math.round(clamp(raw.tracking, 0, 8, defaultLook.tracking)),
   };
+}
+
+/** 額外字距。未寫、唔係數字、或者負數都當 0，畫面先至唔會相對而家偏移。 */
+export function letterGap(tracking: number | undefined): number {
+  if (typeof tracking !== "number" || !Number.isFinite(tracking) || tracking <= 0) return 0;
+  return tracking;
+}
+
+/** 直排字柱每隻字的步進。字距 0 就等於字級。 */
+export function glyphStep(size: number, tracking: number | undefined): number {
+  return size + letterGap(tracking);
 }
 
 export function resolvedTransColor(color: string | undefined, transColor: string | undefined): string {

@@ -38,6 +38,13 @@ describe("字體", () => {
     expect(parsed.style.transY).toBeCloseTo(defaultLook.y + (defaultLook.size * 1.25) / 1080);
     expect(parsed.style.transSize).toBe(defaultLook.transSize);
     expect(parsed.style.transColor).toBe(defaultLook.color);
+    expect(parsed.style.tracking).toBe(0);
+    expect(parseProject({ ...raw, style: { ...raw.style, tracking: 4 } }).style.tracking).toBe(4);
+    expect(defaultLook.tracking).toBe(0);
+    expect(clampLook({ ...defaultLook, tracking: 4 }).tracking).toBe(4);
+    expect(clampLook({ ...defaultLook, tracking: 4.6 }).tracking).toBe(5);
+    expect(clampLook({ ...defaultLook, tracking: 9 }).tracking).toBe(8);
+    expect(clampLook({ ...defaultLook, tracking: -2 }).tracking).toBe(0);
   });
 
   it("舊檔的譯文比例換成字級，已分開的字級同顏色保持", () => {

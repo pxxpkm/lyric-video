@@ -585,12 +585,16 @@ export function verticalColumns(
   fontPx: number,
   transScale: number,
   counts: { main: number; trans: number },
+  trackingPx = 0,
 ): { main: LyricBand; trans: LyricBand | null } {
   const transPx = fontPx * transScale;
   const mainCount = Math.max(1, counts.main);
+  const gap = Number.isFinite(trackingPx) ? Math.max(0, trackingPx) : 0;
+  const mainStep = fontPx + gap;
+  const transStep = transPx + gap;
   return {
-    main: { x: origX, y: origY, w: fontPx, h: mainCount * fontPx },
-    trans: counts.trans > 0 ? { x: transX, y: transY, w: transPx, h: counts.trans * transPx } : null,
+    main: { x: origX, y: origY, w: fontPx, h: mainCount * mainStep },
+    trans: counts.trans > 0 ? { x: transX, y: transY, w: transPx, h: counts.trans * transStep } : null,
   };
 }
 

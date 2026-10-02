@@ -43,6 +43,8 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
         onChange={(outline) => patch({ outline })}
       />
       <Color label="裙邊顏色" value={look.outlineColor} onChange={(outlineColor) => patch({ outlineColor })} />
+      <Slider label="字距" min={0} max={8} step={1} value={look.tracking ?? 0} onChange={(tracking) => patch({ tracking })} />
+      <p className="meta span">0 同而家一樣。拉高就喺字與字之間加空位，直排就沿住字柱拉開。原文同譯文共用。</p>
       <Slider label="原文左右" min={0} max={1} step={0.01} value={look.x} onChange={(x) => patch({ x })} />
       <Slider label="原文上下" min={0.08} max={0.94} step={0.01} value={look.y} onChange={(y) => patch({ y })} />
       <Slider label="譯文左右" min={0} max={1} step={0.01} value={look.transX} onChange={(transX) => patch({ transX })} />

@@ -201,6 +201,12 @@ describe("片段運動", () => {
     expect(pointOnBands({ x: 100, y: 240 }, [cols.main, cols.trans])).toBe(true);
     expect(pointOnBands({ x: 100, y: 280 }, [cols.main, cols.trans])).toBe(false);
     expect(pointOnBands({ x: 320, y: 180 }, [cols.main, cols.trans])).toBe(true);
+    const spaced = verticalColumns(100, 200, 320, 180, 40, 0.5, { main: 3, trans: 2 }, 10);
+    expect(spaced.main.h).toBe(150);
+    expect(spaced.main.y).toBe(200);
+    expect(spaced.trans?.h).toBe(60);
+    expect(pointOnBands({ x: 100, y: 270 }, [spaced.main])).toBe(true);
+    expect(pointOnBands({ x: 100, y: 290 }, [spaced.main])).toBe(false);
   });
 
   it("飛入由定位下面移到定位，之後停住", () => {

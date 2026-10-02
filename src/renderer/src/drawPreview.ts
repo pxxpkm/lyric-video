@@ -1,6 +1,6 @@
 import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/preview";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
-import { canvasFont, defaultLook, edgeOutlineAt, isVerticalFlow, mixHex, type LyricLook } from "../../core/lyricLook";
+import { canvasFont, defaultLook, edgeOutlineAt, isVerticalFlow, letterGap, mixHex, type LyricLook } from "../../core/lyricLook";
 import {
   isDecor,
   lyricBands,
@@ -104,10 +104,19 @@ export function drawPreview(
   } else if (isVerticalFlow(look.flow)) {
     const words = shown[frame.index]?.words ?? null;
     const glyphs = mainGlyphs(words, frame, look);
-    const bands = verticalColumns(x, y, transX, transY, fontPx, transRatio(look), {
-      main: glyphs.length,
-      trans: Array.from(frame.trans).length,
-    });
+    const bands = verticalColumns(
+      x,
+      y,
+      transX,
+      transY,
+      fontPx,
+      transRatio(look),
+      {
+        main: glyphs.length,
+        trans: Array.from(frame.trans).length,
+      },
+      trackPx(look, scale),
+    );
     drawColumn(ctx, glyphs, bands.main, look, fontPx, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint, look.outlineColor, edged);
     if (frame.trans && bands.trans) {
       drawColumn(
@@ -126,9 +135,11 @@ export function drawPreview(
   } else {
     const line = shown[frame.index];
     const words = line?.words ?? null;
+    const gap = trackPx(look, scale);
     const bands = measureBands(ctx, shown, frame, mediaMs, timing, look, clips, width, height);
     withPose(ctx, x, y, placed, () => {
-      if (edged) drawEdged(ctx, words, frame, x, y, look, fontPx, edge);
+      if (gap > 0) drawTracked(ctx, words, frame, x, y, look, fontPx, edge, gap, edged, placed.tint);
+      else if (edged) drawEdged(ctx, words, frame, x, y, look, fontPx, edge);
       else if (hasKaraoke(words, frame)) drawCurrent(ctx, words, frame, x, y, look, fontPx, edge);
       else paint(ctx, frame.text, x, y, mixHex(look.color, look.sungColor, placed.tint), look.outlineColor, edge);
     });
@@ -137,7 +148,18 @@ export function drawPreview(
       withPose(ctx, at.x, at.y, translated, () => {
         ctx.font = canvasFont(look, transPx);
         const fill = mixHex(look.transColor, look.sungColor, translated.tint);
-        if (edged) {
+        if (gap > 0) {
+          paintRun(
+            ctx,
+            Array.from(frame.trans).map((ch) => ({ ch, fill })),
+            at.x,
+            at.y,
+            edge,
+            look,
+            gap,
+            edged,
+          );
+        } else if (edged) {
           paintRun(
             ctx,
             Array.from(frame.trans).map((ch) => ({ ch, fill })),
@@ -222,26 +244,40 @@ function measureBands(
   const transPx = look.transSize * scale;
   const placed = linePlacement(clips, frame.key, mediaMs, look, shown, timing);
   const translated = transPlacement(clips, frame.key, mediaMs, look, shown, timing);
+  const gap = trackPx(look, scale);
   if (isVerticalFlow(look.flow)) {
-    return verticalColumns(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), {
-      main: mainGlyphs(shown[frame.index]?.words ?? null, frame, look).length,
-      trans: Array.from(frame.trans).length,
-    });
+    return verticalColumns(
+      placed.x * width,
+      placed.y * height,
+      translated.x * width,
+      translated.y * height,
+      fontPx,
+      transRatio(look),
+      {
+        main: mainGlyphs(shown[frame.index]?.words ?? null, frame, look).length,
+        trans: Array.from(frame.trans).length,
+      },
+      gap,
+    );
   }
-  const line = shown[frame.index];
+  const words = shown[frame.index]?.words ?? null;
   const edged = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset === "edge";
   ctx.font = canvasFont(look, fontPx);
-  const main = edged ? runWidth(ctx, frame.text) : textWidth(ctx, line?.words ?? null, frame);
+  const main = gap > 0 ? trackedWidth(ctx, words, frame, gap) : edged ? runWidth(ctx, frame.text) : textWidth(ctx, words, frame);
   let trans = 0;
   if (frame.trans) {
     ctx.font = canvasFont(look, transPx);
-    trans = edged ? runWidth(ctx, frame.trans) : ctx.measureText(frame.trans).width;
+    trans = gap > 0 ? textGapWidth(ctx, Array.from(frame.trans), gap) : edged ? runWidth(ctx, frame.trans) : ctx.measureText(frame.trans).width;
   }
   return lyricBands(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), { main, trans });
 }
 
 function transRatio(look: LyricLook): number {
   return look.transSize / look.size;
+}
+
+function trackPx(look: LyricLook, scale: number): number {
+  return letterGap(look.tracking) * scale;
 }
 
 function mainGlyphs(
@@ -314,6 +350,34 @@ function drawEdged(
   paintRun(ctx, glyphs, center, y, edge, look);
 }
 
+function drawTracked(
+  ctx: CanvasRenderingContext2D,
+  words: { text: string }[] | null,
+  frame: PreviewFrame,
+  center: number,
+  y: number,
+  look: LyricLook,
+  fontPx: number,
+  edge: number,
+  gap: number,
+  ramp: boolean,
+  tint: number,
+): void {
+  ctx.font = canvasFont(look, fontPx);
+  const glyphs = hasKaraoke(words, frame)
+    ? (words ?? []).flatMap((word, index) =>
+        Array.from(word.text).map((ch) => ({
+          ch,
+          fill: index <= frame.wordIndex ? look.sungColor : withAlpha(look.color, 0.45),
+        })),
+      )
+    : Array.from(frame.text).map((ch) => ({
+        ch,
+        fill: tint > 0 ? mixHex(look.color, look.sungColor, tint) : look.color,
+      }));
+  paintRun(ctx, glyphs, center, y, edge, look, gap, ramp);
+}
+
 function paintRun(
   ctx: CanvasRenderingContext2D,
   glyphs: { ch: string; fill: string }[],
@@ -321,16 +385,20 @@ function paintRun(
   y: number,
   edge: number,
   look: LyricLook,
+  gap = 0,
+  ramp = true,
 ): void {
   if (glyphs.length === 0) return;
   const widths = glyphs.map((glyph) => ctx.measureText(glyph.ch).width);
-  const total = widths.reduce((sum, width) => sum + width, 0);
+  const total = widths.reduce((sum, width) => sum + width, 0) + gap * Math.max(0, glyphs.length - 1);
   let x = center - total / 2;
   const align = ctx.textAlign;
   ctx.textAlign = "left";
   glyphs.forEach((glyph, index) => {
-    paint(ctx, glyph.ch, x, y, glyph.fill, edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length), edge);
+    const stroke = ramp ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor;
+    paint(ctx, glyph.ch, x, y, glyph.fill, stroke, edge);
     x += widths[index];
+    if (index < glyphs.length - 1) x += gap;
   });
   ctx.textAlign = align;
 }
@@ -358,6 +426,24 @@ function withPose(
 
 function runWidth(ctx: CanvasRenderingContext2D, text: string): number {
   return Array.from(text).reduce((sum, ch) => sum + ctx.measureText(ch).width, 0);
+}
+
+function trackedWidth(
+  ctx: CanvasRenderingContext2D,
+  words: { text: string }[] | null,
+  frame: PreviewFrame,
+  gap: number,
+): number {
+  const chars = hasKaraoke(words, frame)
+    ? (words ?? []).flatMap((word) => Array.from(word.text))
+    : Array.from(frame.text);
+  return textGapWidth(ctx, chars, gap);
+}
+
+function textGapWidth(ctx: CanvasRenderingContext2D, chars: string[], gap: number): number {
+  if (chars.length === 0) return 0;
+  const ink = chars.reduce((sum, ch) => sum + ctx.measureText(ch).width, 0);
+  return ink + gap * (chars.length - 1);
 }
 
 function textWidth(ctx: CanvasRenderingContext2D, words: { text: string }[] | null, frame: PreviewFrame): number {

@@ -327,6 +327,37 @@ describe("karaoke.ass", () => {
     expect(buildKaraokeAss(testClipLines(), undefined, defaultLook, parsed.motion)).toContain("●");
   });
 
+  it("字距 0 的樣式間距仍然係 0", () => {
+    const styles = buildKaraokeAss(testClipLines())
+      .split("\n")
+      .filter((row) => row.startsWith("Style:"));
+    expect(styles).toHaveLength(2);
+    expect(styles.every((row) => row.includes(",100,100,0,0,"))).toBe(true);
+  });
+
+  it("字距寫入兩個樣式，直排改字柱步進，歌詞仍然停住", () => {
+    const spaced = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, tracking: 8 });
+    const styles = spaced.split("\n").filter((row) => row.startsWith("Style:"));
+    expect(styles.every((row) => row.includes(",100,100,8,0,"))).toBe(true);
+    const lyric = spaced.split("\n").find((row) => row.includes("第一句"));
+    expect(lyric).toContain("第一句");
+    expect(lyric).toContain("\\pos(");
+    expect(lyric).not.toContain("\\fsp");
+    expect(lyric).not.toContain("\\move");
+    expect(spaced).not.toContain("●");
+    const vertical = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40, tracking: 10 });
+    expect(vertical).toContain("\\pos(960,836)");
+    expect(vertical).toContain("\\pos(960,886)");
+    expect(vertical).toContain("\\pos(960,936)");
+    expect(vertical).not.toContain("\\pos(960,846)");
+    expect(vertical).not.toContain("\\pos(960,926)");
+    expect(vertical).toContain(`\\fs${assFontSize(40, "chiron")}`);
+    expect(vertical).not.toContain(`\\fs${assFontSize(50, "chiron")}`);
+    const zero = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40, tracking: 0 });
+    expect(zero).toContain("\\pos(960,846)");
+    expect(zero).toContain("\\pos(960,926)");
+  });
+
   it("正的延遲讓字幕晚出現", () => {
     const ass = buildKaraokeAss(testClipLines(), { ...defaultTiming(), offsetMs: 50 });
     expect(ass).toContain("0:00:01.05");
