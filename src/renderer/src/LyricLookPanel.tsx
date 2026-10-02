@@ -7,7 +7,7 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
 
   return (
     <>
-      <p className="meta span">原文同譯文各自有字級、顏色同成首位置。改一邊唔會帶動另一邊，已經單獨擺過的句子保持距離。</p>
+      <p className="meta span">原文同譯文各自有字體、字級、顏色同成首位置。改一邊唔會帶動另一邊，已經單獨擺過的句子保持距離。</p>
       <label className="span">
         排列
         <select
@@ -20,7 +20,7 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
       </label>
       <p className="meta span">垂直由上寫到下，逐隻字疊住。橫排都一樣，原文同譯文可以分開擺。例如日文放左側、中文放右側。</p>
       <label className="span">
-        字體
+        原文字體
         <select value={look.font} onChange={(event) => patch({ font: event.target.value })}>
           {lyricFonts.map((font) => (
             <option key={font.id} value={font.id}>
@@ -29,6 +29,17 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
           ))}
         </select>
       </label>
+      <label className="span">
+        譯文字體
+        <select value={look.transFont} onChange={(event) => patch({ transFont: event.target.value })}>
+          {lyricFonts.map((font) => (
+            <option key={font.id} value={font.id}>
+              {font.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="meta span">譯文可以另揀一款。未寫過的舊檔，譯文跟原文。裙邊、字距、柔邊仍然共用。</p>
       <Slider label="原文字級" min={24} max={120} step={1} value={look.size} onChange={(size) => patch({ size })} />
       <Color label="原文顏色" value={look.color} onChange={(color) => patch({ color })} />
       <Color label="原文唱到" value={look.sungColor} onChange={(sungColor) => patch({ sungColor })} />

@@ -406,6 +406,48 @@ describe("karaoke.ass", () => {
     expect(glyphs.every((row) => row.includes(`\\blur${softBlur}`))).toBe(true);
   });
 
+  it("譯文另揀字體，原文同小點留喺原款", () => {
+    const look = { ...defaultLook, size: 40, transSize: 80, transFont: "kai" };
+    const ass = buildKaraokeAss(testClipLines(), undefined, look);
+    const orig = ass.split("\n").find((row) => row.startsWith("Style: Orig"));
+    const trans = ass.split("\n").find((row) => row.startsWith("Style: Trans"));
+    expect(orig?.startsWith(`Style: Orig,Chiron GoRound TC,${assFontSize(40, "chiron")},`)).toBe(true);
+    expect(trans?.startsWith(`Style: Trans,KaiTi,${assFontSize(80, "kai")},`)).toBe(true);
+    expect(trans).not.toContain("Chiron GoRound TC");
+    const vertical = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "vertical" });
+    const glyph = vertical.split("\n").find((row) => row.endsWith("譯"));
+    const main = vertical.split("\n").find((row) => row.endsWith("第"));
+    expect(glyph).toContain(`\\fs${assFontSize(80, "kai")}`);
+    expect(glyph).not.toContain(`\\fs${assFontSize(80, "chiron")}`);
+    expect(main).toContain(`\\fs${assFontSize(40, "chiron")}`);
+    expect(main).not.toContain(`\\fs${assFontSize(40, "kai")}`);
+    const dusty = buildKaraokeAss(testClipLines(), undefined, look, [
+      presetClip("3000|第二句", "第二句", 3000, 6000, "dust"),
+    ]);
+    const dots = dusty.split("\n").filter((row) => row.includes("●"));
+    const origDots = dots.filter((row) => row.includes(",Orig,"));
+    const transDots = dots.filter((row) => row.includes(",Trans,"));
+    const origPlaced = decorDots("dust", 3000, decorLayout("第二句", 40, false));
+    const transPlaced = decorDots("dust", 3000, decorLayout("第二句譯文", 80, false));
+    expect(origDots).toHaveLength(origPlaced.length);
+    expect(transDots).toHaveLength(transPlaced.length);
+    expect(origDots[0]).toContain(`\\fs${assFontSize(origPlaced[0].size, "chiron")}`);
+    expect(origDots[0]).not.toContain(`\\fs${assFontSize(origPlaced[0].size, "kai")}`);
+    expect(transDots[0]).toContain(`\\fs${assFontSize(transPlaced[0].size, "kai")}`);
+    expect(transDots[0]).not.toContain(`\\fs${assFontSize(transPlaced[0].size, "chiron")}`);
+    expect(transDots.every((row) => !row.includes("\\blur"))).toBe(true);
+    const shared = buildKaraokeAss(testClipLines(), undefined, {
+      ...defaultLook,
+      font: "jhenghei",
+      transFont: "jhenghei",
+      tracking: 3,
+    });
+    const styles = shared.split("\n").filter((row) => row.startsWith("Style:"));
+    expect(styles[0]?.startsWith("Style: Orig,Microsoft JhengHei,")).toBe(true);
+    expect(styles[1]?.startsWith("Style: Trans,Microsoft JhengHei,")).toBe(true);
+    expect(styles.every((row) => row.includes(",100,100,3,0,"))).toBe(true);
+  });
+
   it("正的延遲讓字幕晚出現", () => {
     const ass = buildKaraokeAss(testClipLines(), { ...defaultTiming(), offsetMs: 50 });
     expect(ass).toContain("0:00:01.05");

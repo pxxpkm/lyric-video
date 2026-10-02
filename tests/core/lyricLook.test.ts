@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildKaraokeAss } from "../../src/core/ass";
-import { assColor, assFontSize, clampLook, defaultLook, isVerticalFlow, lyricFont, moveLook } from "../../src/core/lyricLook";
+import { assColor, assFontSize, canvasFont, clampLook, defaultLook, isVerticalFlow, lyricFont, moveLook } from "../../src/core/lyricLook";
 import { exampleProject, parseProject } from "../../src/core/project";
 import { testClipLines } from "../../src/core/preview";
 
@@ -40,6 +40,7 @@ describe("字體", () => {
     expect(parsed.style.transColor).toBe(defaultLook.color);
     expect(parsed.style.tracking).toBe(0);
     expect(parsed.style.soft).toBe(false);
+    expect(parsed.style.transFont).toBe(lyricFont(parsed.style.font).id);
     expect(defaultLook.soft).toBe(false);
     expect(clampLook({ ...defaultLook, soft: true }).soft).toBe(true);
     expect(parseProject({ ...raw, style: { ...raw.style, soft: true } }).style.soft).toBe(true);
@@ -116,5 +117,32 @@ describe("字體", () => {
     expect(assFontSize(64, "kai")).toBe(80);
     expect(ass).toContain(assColor(look.outlineColor));
     expect(ass).toContain("Chiron GoRound TC");
+  });
+
+  it("未寫譯文字體就跟原文，寫咗就各自", () => {
+    expect(defaultLook.transFont).toBe("chiron");
+    const { transFont: _drop, ...rest } = defaultLook;
+    const followed = clampLook({ ...rest, font: "jhenghei" });
+    expect(followed.font).toBe("jhenghei");
+    expect(followed.transFont).toBe("jhenghei");
+    expect(clampLook({ font: "jhenghei", transFont: "  " }).transFont).toBe("jhenghei");
+    const kept = clampLook({ ...followed, font: "yahei" });
+    expect(kept.font).toBe("yahei");
+    expect(kept.transFont).toBe("jhenghei");
+    expect(clampLook({ font: "jhenghei", transFont: "kai" })).toMatchObject({ font: "jhenghei", transFont: "kai" });
+    expect(canvasFont(kept, 48)).toContain("Microsoft YaHei");
+    expect(canvasFont(kept, 32, kept.transFont)).toContain("Microsoft JhengHei");
+    expect(buildKaraokeAss(testClipLines(), undefined, clampLook(rest))).toBe(buildKaraokeAss(testClipLines()));
+    const raw = exampleProject();
+    const { transFont: _gone, ...style } = raw.style;
+    const loaded = parseProject({ ...raw, style: { ...style, font: "jhenghei" } });
+    expect(loaded.style.font).toBe("jhenghei");
+    expect(loaded.style.transFont).toBe("jhenghei");
+    const picked = parseProject({ ...raw, style: { ...style, font: "jhenghei", transFont: "kai" } });
+    expect(picked.style.font).toBe("jhenghei");
+    expect(picked.style.transFont).toBe("kai");
+    const changed = parseProject({ ...raw, style: { ...picked.style, font: "yahei" } });
+    expect(changed.style.font).toBe("yahei");
+    expect(changed.style.transFont).toBe("kai");
   });
 });

@@ -168,7 +168,7 @@ function verticalEvents(
       "Orig",
       start,
       end,
-      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, origStep, index), look.size, look, fade, glyph.switchMs, look.color, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor)}${escapeAss(glyph.ch)}`,
+      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, origStep, index), look.size, look, fade, glyph.switchMs, look.color, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor, look.font)}${escapeAss(glyph.ch)}`,
     ),
   );
   const trans = line.translatedText?.trim();
@@ -181,7 +181,7 @@ function verticalEvents(
           "Trans",
           start,
           end,
-          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), look.transSize, look, fade, null, look.transColor, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, chars.length) : look.outlineColor)}${escapeAss(ch)}`,
+          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), look.transSize, look, fade, null, look.transColor, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, chars.length) : look.outlineColor, look.transFont)}${escapeAss(ch)}`,
         ),
       );
     });
@@ -236,11 +236,12 @@ function glyphOverride(
   clip: MotionClip | undefined,
   spanMs: number,
   outline: string,
+  fontId: string,
 ): string {
   const pose = assPoseTags(clip?.preset, Math.round(x), Math.round(y), spanMs);
   const sung = switchMs == null ? "" : `\\t(${Math.round(switchMs)},${Math.round(switchMs)},\\1c${assColor(look.sungColor)})`;
   const color = clip?.preset === "tint" && switchMs == null ? tintOverride(fill, look.sungColor, spanMs) : `\\1c${assColor(fill)}`;
-  const size = assFontSize(nominal, look.font);
+  const size = assFontSize(nominal, fontId);
   const blur = look.soft ? `\\blur${softBlur}` : "";
   return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(outline)}${color}${fade}${sung}${blur}}`;
 }
@@ -263,7 +264,7 @@ function pushDecor(
   const span = end - start;
   const layout = decorLayout(text, nominal, isVerticalFlow(look.flow));
   for (const dot of decorDots(clip.preset, span, layout)) {
-    const size = assFontSize(dot.size, look.font);
+    const size = assFontSize(dot.size, style === "Trans" ? look.transFont : look.font);
     const move = decorMoveWindow(dot, span);
     const tag = `{\\an5\\move(${ox + dot.x},${oy + dot.y},${ox + dot.x2},${oy + dot.y2},${move.t1},${move.t2})\\fs${size}\\bord0\\1c${assColor(fill)}${decorFadeTag(dot, span)}}`;
     events.push(dialogue(style, start, end, `${tag}${DECOR_MARK}`));
@@ -309,11 +310,12 @@ function withBlur(tag: string, look: LyricLook): string {
 
 function scriptHeader(look: LyricLook): string {
   const font = lyricFont(look.font).ass;
+  const transFace = lyricFont(look.transFont).ass;
   const fill = assColor(look.color);
   const sung = assColor(look.sungColor);
   const edge = assColor(look.outlineColor);
   const transFill = assColor(look.transColor);
-  const transSize = assFontSize(look.transSize, look.font);
+  const transSize = assFontSize(look.transSize, look.transFont);
   const mainSize = assFontSize(look.size, look.font);
   const spacing = Math.round(letterGap(look.tracking));
   return `[Script Info]
@@ -326,7 +328,7 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Orig,${font},${mainSize},${fill},${sung},${edge},&H00000000,0,0,0,0,100,100,${spacing},0,1,${look.outline},0,5,40,40,40,1
-Style: Trans,${font},${transSize},${transFill},${transFill},${edge},&H00000000,0,0,0,0,100,100,${spacing},0,1,${look.outline},0,5,40,40,40,1
+Style: Trans,${transFace},${transSize},${transFill},${transFill},${edge},&H00000000,0,0,0,0,100,100,${spacing},0,1,${look.outline},0,5,40,40,40,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text`;

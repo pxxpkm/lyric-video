@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defaultLook, pairedTrans, resolvedTransColor, resolvedTransSize } from "./lyricLook";
+import { defaultLook, pairedTrans, resolvedTransColor, resolvedTransFont, resolvedTransSize } from "./lyricLook";
 import { knownPreset, linePresetNames, settleClip } from "./motion";
 
 const wordSchema = z.object({
@@ -89,6 +89,7 @@ export const projectSchema = z.object({
     y: z.number().default(defaultLook.y),
     transX: z.number().optional(),
     transY: z.number().optional(),
+    transFont: z.string().optional(),
     tracking: z.number().default(0),
     soft: z.boolean().default(false),
   }),
@@ -118,6 +119,7 @@ function withTransPaint(style: Project["style"], raw: Record<string, unknown> | 
     ...style,
     transSize: resolvedTransSize(style.size, style.transSize, scale),
     transColor: resolvedTransColor(style.color, style.transColor),
+    transFont: resolvedTransFont(style.font, typeof raw?.transFont === "string" ? raw.transFont : style.transFont),
   };
 }
 
@@ -195,6 +197,7 @@ export function exampleProject(): Project {
       y: defaultLook.y,
       transX: defaultLook.transX,
       transY: defaultLook.transY,
+      transFont: defaultLook.transFont,
       tracking: defaultLook.tracking,
       soft: defaultLook.soft,
     },

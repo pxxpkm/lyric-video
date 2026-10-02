@@ -131,6 +131,7 @@ export function drawPreview(
         translated.tint,
         look.outlineColor,
         edged,
+        look.transFont,
       );
     }
   } else {
@@ -139,6 +140,8 @@ export function drawPreview(
     const gap = trackPx(look, scale);
     const bands = measureBands(ctx, shown, frame, mediaMs, timing, look, clips, width, height);
     withPose(ctx, x, y, placed, () => {
+      // 量度譯文寬度會改 ctx.font。成句原文唔會自己設字體，要先設回原文。
+      ctx.font = canvasFont(look, fontPx);
       if (gap > 0) drawTracked(ctx, words, frame, x, y, look, fontPx, edge, gap, edged, placed.tint);
       else if (edged) drawEdged(ctx, words, frame, x, y, look, fontPx, edge);
       else if (hasKaraoke(words, frame)) drawCurrent(ctx, words, frame, x, y, look, fontPx, edge);
@@ -147,7 +150,7 @@ export function drawPreview(
     if (frame.trans && bands?.trans) {
       const at = bands.trans;
       withPose(ctx, at.x, at.y, translated, () => {
-        ctx.font = canvasFont(look, transPx);
+        ctx.font = canvasFont(look, transPx, look.transFont);
         const fill = mixHex(look.transColor, look.sungColor, translated.tint);
         if (gap > 0) {
           paintRun(
@@ -194,6 +197,7 @@ export function drawPreview(
         look.transColor,
         look,
         decorLayout(frame.trans, look.transSize, vertical),
+        look.transFont,
       );
     }
   }
@@ -263,13 +267,15 @@ function measureBands(
   }
   const words = shown[frame.index]?.words ?? null;
   const edged = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset === "edge";
+  const kept = ctx.font;
   ctx.font = canvasFont(look, fontPx);
   const main = gap > 0 ? trackedWidth(ctx, words, frame, gap) : edged ? runWidth(ctx, frame.text) : textWidth(ctx, words, frame);
   let trans = 0;
   if (frame.trans) {
-    ctx.font = canvasFont(look, transPx);
+    ctx.font = canvasFont(look, transPx, look.transFont);
     trans = gap > 0 ? textGapWidth(ctx, Array.from(frame.trans), gap) : edged ? runWidth(ctx, frame.trans) : ctx.measureText(frame.trans).width;
   }
+  ctx.font = kept;
   return lyricBands(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), { main, trans });
 }
 
@@ -312,11 +318,12 @@ function drawColumn(
   tint = 0,
   outline = look.outlineColor,
   ramp = false,
+  fontId = look.font,
 ): void {
   if (glyphs.length === 0) return;
   const step = band.h / glyphs.length;
   const top = band.y - band.h / 2 + step / 2;
-  ctx.font = canvasFont(look, fontPx);
+  ctx.font = canvasFont(look, fontPx, fontId);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   // 直排每隻字係獨立事件。放大同擺正繞自己的中心，先至同匯出一樣，字距亦唔會被成條柱拉散。
@@ -491,13 +498,14 @@ function drawDecor(
   fill: string,
   look: LyricLook,
   layout: { axis: "x" | "y"; extent: number; size: number },
+  fontId = look.font,
 ): void {
   ctx.save();
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (const dot of sampleDecor(preset, mediaMs, startMs, endMs, layout)) {
     ctx.globalAlpha = dot.opacity;
-    ctx.font = canvasFont(look, dot.size * scale);
+    ctx.font = canvasFont(look, dot.size * scale, fontId);
     paint(ctx, DECOR_MARK, anchorX + dot.x * scale, anchorY + dot.y * scale, fill, fill, 0);
   }
   ctx.restore();

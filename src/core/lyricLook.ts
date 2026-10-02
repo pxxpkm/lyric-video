@@ -23,6 +23,8 @@ export type LyricLook = {
   y: number;
   transX: number;
   transY: number;
+  /** 譯文款式。未寫就跟原文。寫咗之後改原文唔會再帶動。 */
+  transFont: string;
   /** 字與字之間的額外空位，1080 畫面的像素。原文同譯文共用。0 就同未加之前一樣。 */
   tracking: number;
   /** 全首歌詞的固定柔邊。小點不加。 */
@@ -49,6 +51,7 @@ export const defaultLook: LyricLook = {
   y: 0.82,
   transX: 0.5,
   transY: 0.82 + (64 * 1.25) / 1080,
+  transFont: "chiron",
   tracking: 0,
   soft: false,
 };
@@ -62,6 +65,13 @@ export function lyricFont(id: string | null | undefined): LyricFont {
   const key = (id ?? "").trim().toLowerCase();
   const mapped = aliases[key] ?? key;
   return lyricFonts.find((font) => font.id === mapped) ?? lyricFonts[0];
+}
+
+/** 未寫、空白就跟原文。寫咗就用自己的款，之後改原文唔會再帶動。 */
+export function resolvedTransFont(fontId: string | null | undefined, transFont: string | null | undefined): string {
+  const main = lyricFont(fontId).id;
+  if (typeof transFont !== "string" || transFont.trim() === "") return main;
+  return lyricFont(transFont).id;
 }
 
 export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) | null | undefined): LyricLook {
@@ -82,6 +92,7 @@ export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) 
     y: clamp(raw.y, 0.08, 0.94, defaultLook.y),
     transX: clamp(raw.transX, 0, 1, defaultLook.transX),
     transY: clamp(raw.transY, 0.08, 0.94, defaultLook.transY),
+    transFont: resolvedTransFont(raw.font, raw.transFont),
     tracking: Math.round(clamp(raw.tracking, 0, 8, defaultLook.tracking)),
     soft: raw.soft === true,
   };
@@ -165,8 +176,8 @@ function rgb(hexColor: string): [number, number, number] {
   ];
 }
 
-export function canvasFont(look: LyricLook, px: number): string {
-  const face = lyricFont(look.font).family;
+export function canvasFont(look: LyricLook, px: number, fontId?: string): string {
+  const face = lyricFont(fontId ?? look.font).family;
   return `${Math.max(1, px)}px "${face}", "Microsoft JhengHei", sans-serif`;
 }
 
