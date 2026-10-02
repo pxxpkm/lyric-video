@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { applyEdits, lineKey, type LyricLine } from "../../core/lyrics";
 import type { LyricLook } from "../../core/lyricLook";
 import {
@@ -46,9 +46,12 @@ export function ShapePanel({
   const onAllChangeRef = useRef(onAllChange);
   onAllChangeRef.current = onAllChange;
   const songKey = shown.map((line) => lineKey(line)).join("\n");
+  // 全選狀態同按鈕同一輪寫去預覽。唔好喺效果裡先清 ref，否則按鈕仍然亮住，拖曳已經變返逐句。
+  useLayoutEffect(() => {
+    onAllChangeRef.current?.(allOn);
+  }, [allOn]);
   useEffect(() => {
     setAllOn(false);
-    onAllChangeRef.current?.(false);
   }, [pick, songKey]);
   const selected = shown.find((line) => lineKey(line) === selectedKey) ?? null;
   const spans = useMemo(() => mediaSpans(shown, timing), [shown, timing]);
@@ -107,16 +110,9 @@ export function ShapePanel({
             timing={timing}
             selectedKey={selectedKey}
             allSelected={allOn}
-            onSelectAll={() =>
-              setAllOn((value) => {
-                const next = !value;
-                onAllChangeRef.current?.(next);
-                return next;
-              })
-            }
+            onSelectAll={() => setAllOn((value) => !value)}
             onSelect={(key) => {
               setAllOn(false);
-              onAllChangeRef.current?.(false);
               onSelect(key);
             }}
           />

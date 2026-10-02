@@ -78,8 +78,11 @@ export function Preview({
     );
     debugRef.current = debug;
     timingRef.current = timing;
-    lookRef.current = look;
-    clipsRef.current = clips;
+    // 拖緊個 ref 已經係最新位置。用呢次渲染嘅舊值蓋住，鬆手會彈返拖之前。
+    if (dragRef.current == null) {
+      lookRef.current = look;
+      clipsRef.current = clips;
+    }
   }, [session, debug, timing, showTrans, look, clips]);
 
   useEffect(() => {

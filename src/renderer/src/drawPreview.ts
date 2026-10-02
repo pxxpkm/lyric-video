@@ -27,6 +27,7 @@ import {
   transOffset,
   verticalColumns,
   DECOR_MARK,
+  type LyricBand,
   type MotionClip,
   type Placed,
 } from "../../core/motion";
@@ -58,14 +59,24 @@ export function hitsCurrentLyric(
   const lyricMs = lyricClockMs(mediaMs, timing.offsetMs, timing.rate);
   const shown = applyEdits(lines, timing);
   const frame = previewFrame(shown, lyricMs, timing);
+  if (!frame.text) return null;
   ctx.save();
-  // 飛入只郁畫面。拖曳抓句尾嘅定位，唔跟住飛緊嘅字。
+  // 先抓而家畫住嘅字，再抓句尾定位。飛入開頭兩處分開，只抓句尾就會當咗拖空白。
+  // 譯文畫喺原文上面，兩塊重疊時譯文先中。
+  const visible = measureBands(ctx, shown, frame, mediaMs, timing, look, clips, width, height);
   const restMs = mediaSpans(shown, timing).get(frame.key)?.endMs ?? mediaMs;
-  const bands = measureBands(ctx, shown, frame, restMs, timing, look, clips, width, height);
+  const rest = restMs === mediaMs ? null : measureBands(ctx, shown, frame, restMs, timing, look, clips, width, height);
   ctx.restore();
+  return hitBands(point, visible) ?? hitBands(point, rest);
+}
+
+function hitBands(
+  point: { x: number; y: number },
+  bands: { main: LyricBand; trans: LyricBand | null } | null,
+): "orig" | "trans" | null {
   if (!bands) return null;
-  if (pointOnBands(point, [bands.main])) return "orig";
   if (pointOnBands(point, [bands.trans])) return "trans";
+  if (pointOnBands(point, [bands.main])) return "orig";
   return null;
 }
 

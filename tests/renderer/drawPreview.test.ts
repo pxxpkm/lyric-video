@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { lineKey, lyricLine, type LyricLine } from "../../src/core/lyrics";
 import { defaultTiming } from "../../src/core/timing";
 import { defaultLook, fitPercent, fitUsed, playHeight, playWidth, softBlur } from "../../src/core/lyricLook";
-import { setLineFade, type MotionClip } from "../../src/core/motion";
+import { setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
-import { drawPreview } from "../../src/renderer/src/drawPreview";
+import { drawPreview, hitsCurrentLyric } from "../../src/renderer/src/drawPreview";
 
 function alphasAt(lines: LyricLine[], mediaMs: number, clips: MotionClip[] = []): { text: string; alpha: number }[] {
   const host = globalThis as { window?: { devicePixelRatio: number } };
@@ -275,5 +275,62 @@ describe("預覽字體", () => {
     marks.length = 0;
     drawPreview(canvas as unknown as HTMLCanvasElement, [], 1_000, "audio", defaultTiming(), { ...defaultLook, softBlur: softBlur }, []);
     expect(marks.filter((mark) => mark.text === "尚未有歌詞").every((mark) => mark.filter === "none")).toBe(true);
+  });
+});
+
+describe("預覽拖曳抓字", () => {
+  function hitAt(
+    lines: LyricLine[],
+    mediaMs: number,
+    point: { x: number; y: number },
+    look = defaultLook,
+    clips: MotionClip[] = [],
+  ) {
+    const ctx = {
+      font: "16px sans-serif",
+      save() {},
+      restore() {},
+      measureText(text: string) {
+        return { width: Array.from(text).length * 10 };
+      },
+    };
+    const canvas = {
+      clientWidth: 1920,
+      clientHeight: 1080,
+      getContext: () => ctx,
+    };
+    return hitsCurrentLyric(
+      canvas as unknown as HTMLCanvasElement,
+      lines,
+      mediaMs,
+      defaultTiming(),
+      look,
+      clips,
+      point,
+    );
+  }
+
+  it("飛入開頭抓到而家的字，亦抓到句尾定位", () => {
+    const line = testClipLines()[0];
+    const clips = setLinePreset([], lineKey(line), line.text, 1_000, 3_000, "fly");
+    const restY = defaultLook.y * 1080;
+    expect(hitAt(testClipLines(), 1_000, { x: 960, y: restY + 72 }, defaultLook, clips)).toBe("orig");
+    expect(hitAt(testClipLines(), 1_000, { x: 960, y: restY }, defaultLook, clips)).toBe("orig");
+    expect(hitAt(testClipLines(), 1_000, { x: 10, y: 10 }, defaultLook, clips)).toBeNull();
+  });
+
+  it("直排飛入抓到移低咗的字柱", () => {
+    const line = testClipLines()[0];
+    const clips = setLinePreset([], lineKey(line), line.text, 1_000, 3_000, "fly");
+    const look = { ...defaultLook, flow: "vertical" as const };
+    const restY = look.y * 1080;
+    expect(hitAt([line], 1_000, { x: 960, y: restY + 72 + 90 }, look, clips)).toBe("orig");
+  });
+
+  it("原文同譯文重疊時，抓到畫在上面的譯文", () => {
+    const look = { ...defaultLook, transX: defaultLook.x, transY: defaultLook.y };
+    const y = look.y * 1080;
+    expect(hitAt(testClipLines(), 4_000, { x: 960, y }, look)).toBe("trans");
+    expect(hitAt(testClipLines(), 4_000, { x: 960, y: y + 30 }, look)).toBe("orig");
   });
 });
