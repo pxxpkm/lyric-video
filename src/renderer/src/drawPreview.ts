@@ -80,6 +80,11 @@ function hitBands(
   return null;
 }
 
+/** 暫停或者播完再排下一幀，視窗返到最前都仍然每幀佔 GPU。 */
+export function mediaKeepsPainting(media: { paused: boolean; ended: boolean } | null): boolean {
+  return media != null && !media.paused && !media.ended;
+}
+
 export function drawPreview(
   canvas: HTMLCanvasElement,
   lines: LyricLine[],

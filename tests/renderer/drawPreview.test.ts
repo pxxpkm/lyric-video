@@ -4,7 +4,7 @@ import { defaultTiming } from "../../src/core/timing";
 import { defaultLook, fitPercent, fitUsed, playHeight, playWidth, softBlur } from "../../src/core/lyricLook";
 import { setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
-import { drawPreview, hitsCurrentLyric } from "../../src/renderer/src/drawPreview";
+import { drawPreview, hitsCurrentLyric, mediaKeepsPainting } from "../../src/renderer/src/drawPreview";
 
 function alphasAt(lines: LyricLine[], mediaMs: number, clips: MotionClip[] = []): { text: string; alpha: number }[] {
   const host = globalThis as { window?: { devicePixelRatio: number } };
@@ -332,5 +332,15 @@ describe("預覽拖曳抓字", () => {
     const y = look.y * 1080;
     expect(hitAt(testClipLines(), 4_000, { x: 960, y }, look)).toBe("trans");
     expect(hitAt(testClipLines(), 4_000, { x: 960, y: y + 30 }, look)).toBe("orig");
+  });
+});
+
+describe("預覽暫停就停畫", () => {
+  it("暫停同播完唔再連續畫，播緊先至畫", () => {
+    expect(mediaKeepsPainting(null)).toBe(false);
+    expect(mediaKeepsPainting({ paused: true, ended: false })).toBe(false);
+    expect(mediaKeepsPainting({ paused: true, ended: true })).toBe(false);
+    expect(mediaKeepsPainting({ paused: false, ended: false })).toBe(true);
+    expect(mediaKeepsPainting({ paused: false, ended: true })).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
-import { drawPreview, hitsCurrentLyric, sessionLines } from "./drawPreview";
+import { drawPreview, hitsCurrentLyric, mediaKeepsPainting, sessionLines } from "./drawPreview";
 import { ShapePanel } from "./ShapePanel";
 import { TimingPanel } from "./TimingPanel";
 import { lyricClockMs, mediaMsForLyric, previewFrame } from "../../core/preview";
@@ -68,6 +68,7 @@ export function Preview({
   const [savingAss, setSavingAss] = useState(false);
   const [exportText, setExportText] = useState("");
   const [pos, setPos] = useState(0);
+  const kickPaint = useRef<() => void>(() => {});
   const [duration, setDuration] = useState(session.durationMs / 1000);
   const src = mediaSrc(session.mediaPath);
   const hasLyrics = session.lines.length > 0;
@@ -113,7 +114,8 @@ export function Preview({
 
   useEffect(() => {
     let frame = 0;
-    const loop = () => {
+    let stopped = false;
+    const paint = () => {
       const canvas = canvasRef.current;
       const media = activeMedia(videoRef.current, audioRef.current);
       const posMs = media ? media.currentTime * 1000 : 0;
@@ -148,11 +150,66 @@ export function Preview({
           });
         }
       }
+    };
+    const loop = () => {
+      if (stopped) return;
+      paint();
+      const media = activeMedia(videoRef.current, audioRef.current);
+      // 暫停再排下一幀的話，視窗返到最前都仍然每幀佔 GPU。
+      if (dragRef.current != null || mediaKeepsPainting(media)) frame = requestAnimationFrame(loop);
+    };
+    const kick = () => {
+      if (stopped) return;
+      cancelAnimationFrame(frame);
       frame = requestAnimationFrame(loop);
     };
-    frame = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(frame);
+    kickPaint.current = kick;
+    const nodes = [videoRef.current, audioRef.current];
+    for (const node of nodes) {
+      node?.addEventListener("play", kick);
+      node?.addEventListener("pause", kick);
+      node?.addEventListener("seeked", kick);
+      node?.addEventListener("ended", kick);
+    }
+    const canvas = canvasRef.current;
+    let boxW = canvas?.clientWidth ?? 0;
+    let boxH = canvas?.clientHeight ?? 0;
+    const observer = canvas
+      ? new ResizeObserver(() => {
+          const node = canvasRef.current;
+          if (!node) return;
+          const nextW = node.clientWidth;
+          const nextH = node.clientHeight;
+          if (Math.abs(nextW - boxW) < 2 && Math.abs(nextH - boxH) < 2) return;
+          boxW = nextW;
+          boxH = nextH;
+          kick();
+        })
+      : null;
+    if (canvas) observer?.observe(canvas);
+    const onFont = () => kick();
+    document.fonts.addEventListener("loadingdone", onFont);
+    window.addEventListener("resize", kick);
+    kick();
+    return () => {
+      stopped = true;
+      kickPaint.current = () => {};
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      document.fonts.removeEventListener("loadingdone", onFont);
+      window.removeEventListener("resize", kick);
+      for (const node of nodes) {
+        node?.removeEventListener("play", kick);
+        node?.removeEventListener("pause", kick);
+        node?.removeEventListener("seeked", kick);
+        node?.removeEventListener("ended", kick);
+      }
+    };
   }, [session.mode]);
+
+  useEffect(() => {
+    kickPaint.current();
+  }, [look, timing, clips, session.lines, showTrans, debug, session.mode]);
 
   function replay(line: LyricLine) {
     const media = activeMedia(videoRef.current, audioRef.current);
@@ -267,6 +324,7 @@ export function Preview({
           : placeTransClip(clipsRef.current, drag.key, drag.text, drag.startMs, drag.endMs, x, y, lookRef.current);
       clipsRef.current = next;
       setClips(next);
+      kickPaint.current();
       return;
     }
     const dx = (event.clientX - drag.x) / rect.width;
@@ -279,6 +337,7 @@ export function Preview({
           : moveLook(drag.origin, dx, dy);
     lookRef.current = nextLook;
     setLook(nextLook);
+    kickPaint.current();
   }
 
   function toggle() {
@@ -331,7 +390,14 @@ export function Preview({
                 onPointerDown={beginDrag}
                 onPointerMove={moveLyrics}
                 onPointerUp={(event) => {
-                  if (dragRef.current?.id === event.pointerId) dragRef.current = null;
+                  if (dragRef.current?.id !== event.pointerId) return;
+                  dragRef.current = null;
+                  kickPaint.current();
+                }}
+                onPointerCancel={(event) => {
+                  if (dragRef.current?.id !== event.pointerId) return;
+                  dragRef.current = null;
+                  kickPaint.current();
                 }}
               />
             </div>
@@ -341,7 +407,7 @@ export function Preview({
               <IconButton label={playing ? "暫停" : "播放"} onClick={toggle}>
                 {playing ? <PauseIcon /> : <PlayIcon />}
               </IconButton>
-              <SeekBar videoRef={videoRef} audioRef={audioRef} fallbackSec={duration} onTime={setPos} />
+              <SeekBar mode={session.mode} videoRef={videoRef} audioRef={audioRef} fallbackSec={duration} onTime={setPos} />
             </div>
             <TimeReadout nodeRef={readRef} />
             <div className="stage-actions">

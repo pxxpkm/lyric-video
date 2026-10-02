@@ -1,11 +1,14 @@
 import { useEffect, useRef, type RefObject } from "react";
+import { mediaKeepsPainting } from "./drawPreview";
 
 export function SeekBar({
+  mode,
   videoRef,
   audioRef,
   fallbackSec,
   onTime,
 }: {
+  mode: "video" | "audio";
   videoRef: RefObject<HTMLVideoElement | null>;
   audioRef: RefObject<HTMLAudioElement | null>;
   fallbackSec: number;
@@ -20,8 +23,10 @@ export function SeekBar({
 
   useEffect(() => {
     let frame = 0;
+    let stopped = false;
     let lastSent = 0;
     const tick = () => {
+      if (stopped) return;
       const node = videoRef.current ?? audioRef.current;
       const dur = readDuration(node, fallbackSec);
       const time = node?.currentTime ?? 0;
@@ -34,11 +39,34 @@ export function SeekBar({
         lastSent = now;
         onTimeRef.current(time);
       }
+      if (mediaKeepsPainting(node)) frame = requestAnimationFrame(tick);
+    };
+    const kick = () => {
+      if (stopped) return;
+      cancelAnimationFrame(frame);
       frame = requestAnimationFrame(tick);
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [audioRef, fallbackSec, videoRef]);
+    const nodes = [videoRef.current, audioRef.current];
+    for (const node of nodes) {
+      node?.addEventListener("play", kick);
+      node?.addEventListener("pause", kick);
+      node?.addEventListener("seeked", kick);
+      node?.addEventListener("ended", kick);
+      node?.addEventListener("durationchange", kick);
+    }
+    kick();
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+      for (const node of nodes) {
+        node?.removeEventListener("play", kick);
+        node?.removeEventListener("pause", kick);
+        node?.removeEventListener("seeked", kick);
+        node?.removeEventListener("ended", kick);
+        node?.removeEventListener("durationchange", kick);
+      }
+    };
+  }, [audioRef, fallbackSec, mode, videoRef]);
 
   function seek(clientX: number) {
     const bar = barRef.current;
