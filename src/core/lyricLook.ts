@@ -27,12 +27,17 @@ export type LyricLook = {
   transFont: string;
   /** 字與字之間的額外空位，1080 畫面的像素。原文同譯文共用。0 就同未加之前一樣。 */
   tracking: number;
-  /** 全首歌詞的固定柔邊。小點不加。 */
+  /** 全首歌詞的柔邊。小點不加。 */
   soft: boolean;
+  /** 1080 畫面的高斯模糊。0 就同關閉一樣。原文同譯文共用。 */
+  softBlur: number;
 };
 
-/** 1080 畫面的高斯模糊。參考檔喺 720p 用 4，呢度用較輕的 1.5，避免同裙邊疊到發糊。 */
+/** 未寫過程度、但已經開過柔邊時用。參考檔喺 720p 用 4，呢度用較輕的 1.5，避免同裙邊疊到發糊。 */
 export const softBlur = 1.5;
+
+/** 柔邊拉桿的上限。 */
+export const softBlurMax = 4;
 
 /** 同樣式邊距一樣。收窄留呢條白邊，字先至唔貼住畫面。 */
 export const frameEdge = 40;
@@ -60,6 +65,7 @@ export const defaultLook: LyricLook = {
   transFont: "chiron",
   tracking: 0,
   soft: false,
+  softBlur: 0,
 };
 
 const aliases: Record<string, string> = {
@@ -100,8 +106,20 @@ export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) 
     transY: clamp(raw.transY, 0.08, 0.94, defaultLook.transY),
     transFont: resolvedTransFont(raw.font, raw.transFont),
     tracking: Math.round(clamp(raw.tracking, 0, 8, defaultLook.tracking)),
-    soft: raw.soft === true,
+    soft: lyricBlur(raw.soft, raw.softBlur) > 0,
+    softBlur: lyricBlur(raw.soft, raw.softBlur),
   };
+}
+
+/** 寫低的程度優先。未寫時，開過就用 1.5，否則 0。0 係關閉，要寫低。 */
+export function lyricBlur(soft: boolean | undefined, amount: number | undefined): number {
+  if (typeof amount === "number" && Number.isFinite(amount)) return snapSoftBlur(amount);
+  return soft === true ? softBlur : 0;
+}
+
+function snapSoftBlur(amount: number): number {
+  const clamped = Math.min(softBlurMax, Math.max(0, amount));
+  return Math.round(clamped * 2) / 2;
 }
 
 /** 額外字距。未寫、唔係數字、或者負數都當 0，畫面先至唔會相對而家偏移。 */

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { defaultLook, pairedTrans, resolvedTransColor, resolvedTransFont, resolvedTransSize } from "./lyricLook";
+import { defaultLook, lyricBlur, pairedTrans, resolvedTransColor, resolvedTransFont, resolvedTransSize } from "./lyricLook";
 import { knownPreset, linePresetNames, settleClip } from "./motion";
 
 const wordSchema = z.object({
@@ -94,6 +94,7 @@ export const projectSchema = z.object({
     transFont: z.string().optional(),
     tracking: z.number().default(0),
     soft: z.boolean().default(false),
+    softBlur: z.number().optional(),
   }),
   decision: z.object({
     autoAccepted: z.boolean(),
@@ -117,11 +118,14 @@ export function parseProject(input: unknown): Project {
 
 function withTransPaint(style: Project["style"], raw: Record<string, unknown> | null): Project["style"] {
   const scale = raw && typeof raw.transScale === "number" ? raw.transScale : undefined;
+  const amount = lyricBlur(style.soft, style.softBlur);
   return {
     ...style,
     transSize: resolvedTransSize(style.size, style.transSize, scale),
     transColor: resolvedTransColor(style.color, style.transColor),
     transFont: resolvedTransFont(style.font, typeof raw?.transFont === "string" ? raw.transFont : style.transFont),
+    softBlur: amount,
+    soft: amount > 0,
   };
 }
 
@@ -202,6 +206,7 @@ export function exampleProject(): Project {
       transFont: defaultLook.transFont,
       tracking: defaultLook.tracking,
       soft: defaultLook.soft,
+      softBlur: defaultLook.softBlur,
     },
     motion: [],
     decision: { autoAccepted: false, score: 0, reason: "" },

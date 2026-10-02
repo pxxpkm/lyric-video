@@ -11,7 +11,7 @@ import {
   mixHex,
   playHeight,
   playWidth,
-  softBlur,
+  lyricBlur,
   type LyricLook,
 } from "../../core/lyricLook";
 import {
@@ -117,7 +117,8 @@ export function drawPreview(
   const transUsed = frame.trans ? fitted(frame.trans, look.transSize, look, upright ? rest.transY : rest.transX, upright) : 1;
   ctx.save();
   ctx.globalAlpha = placed.opacity;
-  if (frame.text && look.soft) ctx.filter = `blur(${softBlur * scale}px)`;
+  const blurPx = lyricBlur(look.soft, look.softBlur);
+  if (frame.text && blurPx > 0) ctx.filter = `blur(${blurPx * scale}px)`;
   if (!frame.text) {
     ctx.font = canvasFont(look, Math.max(16, fontPx * 0.7));
     paint(ctx, "尚未有歌詞", x, y, look.color, look.outlineColor, edge);

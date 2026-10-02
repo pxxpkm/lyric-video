@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { lineKey, lyricLine, type LyricLine } from "../../src/core/lyrics";
 import { defaultTiming } from "../../src/core/timing";
-import { defaultLook, fitPercent, fitUsed, playHeight, playWidth } from "../../src/core/lyricLook";
+import { defaultLook, fitPercent, fitUsed, playHeight, playWidth, softBlur } from "../../src/core/lyricLook";
 import { setLineFade, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
 import { drawPreview } from "../../src/renderer/src/drawPreview";
@@ -213,5 +213,67 @@ describe("預覽字體", () => {
     const key = lineKey(lines[0]);
     const cut = setLineFade(setLineFade([], key, "第一句", 1_000, 3_000, "in", 0), key, "第一句", 1_000, 3_000, "out", 0);
     expect(alphasAt(lines, 1_000, cut).filter((mark) => mark.text === "第一句").every((mark) => mark.alpha === 1)).toBe(true);
+  });
+
+  it("柔邊程度同匯出同一個數，空白畫面唔模糊", () => {
+    const host = globalThis as { window?: { devicePixelRatio: number } };
+    host.window ??= { devicePixelRatio: 1 };
+    host.window.devicePixelRatio = 1;
+    const marks: { text: string; filter: string }[] = [];
+    const ctx = {
+      font: "16px sans-serif",
+      fillStyle: "",
+      strokeStyle: "",
+      textAlign: "left",
+      textBaseline: "alphabetic",
+      globalAlpha: 1,
+      filter: "none",
+      lineJoin: "miter",
+      miterLimit: 10,
+      lineWidth: 1,
+      stack: [] as string[],
+      save() {
+        this.stack.push(this.font);
+      },
+      restore() {
+        const prev = this.stack.pop();
+        if (prev != null) this.font = prev;
+        this.filter = "none";
+      },
+      setTransform() {},
+      clearRect() {},
+      fillRect() {},
+      translate() {},
+      rotate() {},
+      scale() {},
+      measureText(text: string) {
+        return { width: Array.from(text).length * 10 };
+      },
+      fillText(text: string) {
+        marks.push({ text, filter: this.filter });
+      },
+      strokeText() {},
+    };
+    const canvas = {
+      clientWidth: 1920,
+      clientHeight: 1080,
+      width: 1920,
+      height: 1080,
+      getContext: () => ctx,
+    };
+    drawPreview(
+      canvas as unknown as HTMLCanvasElement,
+      testClipLines(),
+      4_000,
+      "audio",
+      defaultTiming(),
+      { ...defaultLook, softBlur: 2 },
+      [],
+    );
+    expect(marks.filter((mark) => mark.text === "第二句").every((mark) => mark.filter === "blur(2px)")).toBe(true);
+    expect(marks.filter((mark) => mark.text === "第二句譯文").every((mark) => mark.filter === "blur(2px)")).toBe(true);
+    marks.length = 0;
+    drawPreview(canvas as unknown as HTMLCanvasElement, [], 1_000, "audio", defaultTiming(), { ...defaultLook, softBlur: softBlur }, []);
+    expect(marks.filter((mark) => mark.text === "尚未有歌詞").every((mark) => mark.filter === "none")).toBe(true);
   });
 });

@@ -16,6 +16,8 @@ import {
   moveLook,
   playHeight,
   playWidth,
+  softBlur,
+  softBlurMax,
 } from "../../src/core/lyricLook";
 import { exampleProject, parseProject } from "../../src/core/project";
 import { testClipLines } from "../../src/core/preview";
@@ -56,10 +58,20 @@ describe("字體", () => {
     expect(parsed.style.transColor).toBe(defaultLook.color);
     expect(parsed.style.tracking).toBe(0);
     expect(parsed.style.soft).toBe(false);
+    expect(parsed.style.softBlur).toBe(0);
     expect(parsed.style.transFont).toBe(lyricFont(parsed.style.font).id);
     expect(defaultLook.soft).toBe(false);
-    expect(clampLook({ ...defaultLook, soft: true }).soft).toBe(true);
-    expect(parseProject({ ...raw, style: { ...raw.style, soft: true } }).style.soft).toBe(true);
+    expect(defaultLook.softBlur).toBe(0);
+    expect(defaultLook.outline).toBe(6);
+    expect(clampLook({ soft: true }).softBlur).toBe(softBlur);
+    expect(clampLook({ soft: true }).soft).toBe(true);
+    expect(clampLook({ soft: true, softBlur: 0 }).soft).toBe(false);
+    expect(clampLook({ softBlur: 2.5 }).softBlur).toBe(2.5);
+    expect(clampLook({ softBlur: 9 }).softBlur).toBe(softBlurMax);
+    const { softBlur: stored, ...opened } = raw.style;
+    expect(stored).toBe(0);
+    expect(parseProject({ ...raw, style: { ...opened, soft: true } }).style.softBlur).toBe(softBlur);
+    expect(parseProject({ ...raw, style: { ...raw.style, softBlur: 0, soft: true } }).style).toMatchObject({ soft: false, softBlur: 0 });
     expect(parseProject({ ...raw, style: { ...raw.style, tracking: 4 } }).style.tracking).toBe(4);
     expect(defaultLook.tracking).toBe(0);
     expect(clampLook({ ...defaultLook, tracking: 4 }).tracking).toBe(4);

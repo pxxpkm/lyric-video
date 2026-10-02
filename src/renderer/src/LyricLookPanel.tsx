@@ -1,4 +1,4 @@
-import { defaultLook, isVerticalFlow, lyricFonts, type LyricFlow, type LyricLook } from "../../core/lyricLook";
+import { defaultLook, isVerticalFlow, lyricBlur, lyricFonts, softBlurMax, type LyricFlow, type LyricLook } from "../../core/lyricLook";
 
 export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: (next: LyricLook) => void }) {
   function patch(part: Partial<LyricLook>) {
@@ -56,11 +56,15 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
       <Color label="裙邊顏色" value={look.outlineColor} onChange={(outlineColor) => patch({ outlineColor })} />
       <Slider label="字距" min={0} max={8} step={1} value={look.tracking ?? 0} onChange={(tracking) => patch({ tracking })} />
       <p className="meta span">0 同而家一樣。拉高就喺字與字之間加空位，直排就沿住字柱拉開。原文同譯文共用。</p>
-      <label className="span check">
-        <input type="checkbox" checked={look.soft === true} onChange={(event) => patch({ soft: event.target.checked })} />
-        柔邊
-      </label>
-      <p className="meta span">開咗就全首歌詞加一層固定輕模糊。小點保持清晰。預設關閉。</p>
+      <Slider
+        label="柔邊"
+        min={0}
+        max={softBlurMax}
+        step={0.5}
+        value={lyricBlur(look.soft, look.softBlur)}
+        onChange={(amount) => patch({ softBlur: amount, soft: amount > 0 })}
+      />
+      <p className="meta span">0 就同關閉一樣。拉高就全首歌詞更模糊。小點保持清晰。原文同譯文共用。</p>
       <Slider label="原文左右" min={0} max={1} step={0.01} value={look.x} onChange={(x) => patch({ x })} />
       <Slider label="原文上下" min={0.08} max={0.94} step={0.01} value={look.y} onChange={(y) => patch({ y })} />
       <Slider label="譯文左右" min={0} max={1} step={0.01} value={look.transX} onChange={(transX) => patch({ transX })} />

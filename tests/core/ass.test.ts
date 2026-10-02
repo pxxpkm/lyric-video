@@ -371,7 +371,7 @@ describe("karaoke.ass", () => {
   });
 
   it("柔邊只加喺歌詞，小點同位置保持原樣", () => {
-    const look = { ...defaultLook, soft: true };
+    const look = { ...defaultLook, soft: true, softBlur };
     const ass = buildKaraokeAss(testClipLines(), undefined, look);
     const lyric = ass.split("\n").find((row) => row.includes("第一句"));
     const trans = ass.split("\n").find((row) => row.includes("第二句譯文"));
@@ -543,9 +543,18 @@ describe("karaoke.ass", () => {
     expect(lyric).toContain("\\fad(50,50)");
     expect(dots.length).toBeGreaterThan(0);
     expect(dots.every((row) => !row.includes("\\fad(") && row.includes("\\fade(255,"))).toBe(true);
-    const soft = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, soft: true });
+    const soft = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, soft: true, softBlur });
     const softRow = soft.split("\n").find((row) => row.startsWith("Dialogue: 0,0:00:01.00,") && row.includes(",Orig,"));
     expect(softRow).toContain(`\\fad(50,50)\\blur${softBlur}`);
+    const heavy = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, softBlur: 2.5 }, [
+      presetClip("1000|第一句", "第一句", 1000, 3000, "dust"),
+    ]);
+    const heavyRow = heavy.split("\n").find((row) => row.startsWith("Dialogue: 0,0:00:01.00,") && row.includes(",Orig,"));
+    const heavyDots = heavy.split("\n").filter((row) => row.includes("●"));
+    expect(heavyRow).toContain("\\blur2.5");
+    expect(heavyDots.every((row) => !row.includes("\\blur"))).toBe(true);
+    const cleared = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, soft: true, softBlur: 0 });
+    expect(cleared).not.toContain("\\blur");
   });
 
   it("正的延遲讓字幕晚出現", () => {

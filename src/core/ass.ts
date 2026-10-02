@@ -20,7 +20,7 @@ import {
   lyricFont,
   playHeight,
   playWidth,
-  softBlur,
+  lyricBlur,
   type LyricLook,
 } from "./lyricLook";
 import {
@@ -277,7 +277,7 @@ function glyphOverride(
   const sung = switchMs == null ? "" : `\\t(${Math.round(switchMs)},${Math.round(switchMs)},\\1c${assColor(look.sungColor)})`;
   const color = clip?.preset === "tint" && switchMs == null ? tintOverride(fill, look.sungColor, spanMs) : `\\1c${assColor(fill)}`;
   const size = assFontSize(nominal, fontId);
-  const blur = look.soft ? `\\blur${softBlur}` : "";
+  const blur = blurTag(look);
   return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(outline)}${color}${fade}${sung}${blur}}`;
 }
 
@@ -334,15 +334,20 @@ function place(look: LyricLook, fit: number, startMs: number, endMs: number): st
   const y = Math.round(look.y * playHeight);
   const size = assFontSize(look.size, look.font);
   const fade = assFadeTag(undefined, startMs, endMs);
-  const blur = look.soft ? `\\blur${softBlur}` : "";
-  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}${fitWidthTag(fit)}${fade}${blur}}`;
+  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}${fitWidthTag(fit)}${fade}${blurTag(look)}}`;
+}
+
+function blurTag(look: LyricLook): string {
+  const amount = lyricBlur(look.soft, look.softBlur);
+  return amount > 0 ? `\\blur${amount}` : "";
 }
 
 function withBlur(tag: string, look: LyricLook): string {
-  if (!look.soft) return tag;
+  const blur = blurTag(look);
+  if (!blur) return tag;
   const end = tag.lastIndexOf("}");
   if (end < 0) return tag;
-  return `${tag.slice(0, end)}\\blur${softBlur}${tag.slice(end)}`;
+  return `${tag.slice(0, end)}${blur}${tag.slice(end)}`;
 }
 
 function scriptHeader(look: LyricLook): string {
