@@ -3,7 +3,7 @@ import { formatStamp, lineKey, timeOfMs, type LyricLine } from "../../core/lyric
 import { mediaMsForLyric } from "../../core/preview";
 import { formatHold, formatOffset, type TrackTiming } from "../../core/timing";
 
-const ROW = 52;
+const ROW = 58;
 
 export function LineList({
   lines,
@@ -50,10 +50,14 @@ export function LineList({
               type="button"
               className={allSelected || key === selectedKey ? "pick-row selected" : "pick-row"}
               style={{ top: (start + index) * ROW }}
+              title={lineTitle(line)}
               onClick={() => onSelect(key)}
             >
-              <span>{lineCaption(line, timing)}</span>
-              {line.translatedText ? <span className="trans">{line.translatedText}</span> : null}
+              <span className="when">{lineWhen(line, timing)}</span>
+              <span className="words">
+                <span>{line.text}</span>
+                {line.translatedText ? <span className="trans">{line.translatedText}</span> : null}
+              </span>
             </button>
           );
         })}
@@ -63,13 +67,17 @@ export function LineList({
   );
 }
 
-function lineCaption(line: LyricLine, timing: TrackTiming): string {
+function lineWhen(line: LyricLine, timing: TrackTiming): string {
   const key = lineKey(line);
   const at = Math.round(mediaMsForLyric(timeOfMs(line, timing.lines), timing.offsetMs, timing.rate));
   const shift = timing.lines?.[key] ?? 0;
   const hold = timing.holds?.[key] ?? 0;
-  let mark = "";
-  if (shift !== 0) mark += `  ${formatOffset(shift)}`;
-  if (hold !== 0) mark += `  停留${formatHold(hold)}`;
-  return `${formatStamp(at)}${mark}  ${line.text}`;
+  let mark = formatStamp(at);
+  if (shift !== 0) mark += ` ${formatOffset(shift)}`;
+  if (hold !== 0) mark += ` 停留${formatHold(hold)}`;
+  return mark;
+}
+
+function lineTitle(line: LyricLine): string {
+  return line.translatedText ? `${line.text}\n${line.translatedText}` : line.text;
 }

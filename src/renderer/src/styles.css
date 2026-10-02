@@ -456,11 +456,14 @@ button:disabled {
   position: absolute;
   left: 4px;
   right: 4px;
-  height: 48px;
+  height: 54px;
   margin: 0;
   padding: 4px 8px;
   display: grid;
-  align-content: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  align-items: center;
+  overflow: hidden;
   text-align: left;
   background: transparent;
   color: #f3f5f8;
@@ -472,6 +475,25 @@ button:disabled {
 .pick-row.selected {
   background: #3300d4ff;
   border-color: #7000d4ff;
+}
+
+.pick-row .when {
+  color: #b7c0cc;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.pick-row .words {
+  min-width: 0;
+  display: grid;
+  line-height: 1.25;
+}
+
+.pick-row .words > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pick-row .trans {
