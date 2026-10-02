@@ -6,7 +6,7 @@ import {
   timeOfMs,
   type LyricLine,
 } from "./lyrics";
-import { assColor, assFontSize, defaultLook, edgeOutlineAt, glyphStep, isVerticalFlow, letterGap, lyricFont, type LyricLook } from "./lyricLook";
+import { assColor, assFontSize, defaultLook, edgeOutlineAt, glyphStep, isVerticalFlow, letterGap, lyricFont, softBlur, type LyricLook } from "./lyricLook";
 import {
   assFadeTag,
   assMotion,
@@ -52,15 +52,18 @@ export function buildKaraokeAss(
     } else {
       const wordTimed = pieces.some((piece) => piece.cs != null);
       const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
-      const lead = clip ? assMotion(clip, look, start, end, tint) : place(look);
+      const lead = clip ? withBlur(assMotion(clip, look, start, end, tint), look) : place(look);
       events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look, clip?.preset === "edge")}`));
       pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size);
       const trans = line.translatedText?.trim();
       if (trans) {
         const at = transAnchorPx(look, clip);
-        const body = clip
-          ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "")
-          : posTag(at.x, at.y, "");
+        const body = withBlur(
+          clip
+            ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "")
+            : posTag(at.x, at.y, ""),
+          look,
+        );
         const transText = clip?.preset === "edge" ? edgeBody(trans, look.outlineColor, look.sungColor) : escapeAss(trans);
         events.push(dialogue("Trans", start, end, `${body}${transText}`));
         pushDecor(events, at, look.transColor, look, clip, start, end, "Trans", trans, look.transSize);
@@ -238,7 +241,8 @@ function glyphOverride(
   const sung = switchMs == null ? "" : `\\t(${Math.round(switchMs)},${Math.round(switchMs)},\\1c${assColor(look.sungColor)})`;
   const color = clip?.preset === "tint" && switchMs == null ? tintOverride(fill, look.sungColor, spanMs) : `\\1c${assColor(fill)}`;
   const size = assFontSize(nominal, look.font);
-  return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(outline)}${color}${fade}${sung}}`;
+  const blur = look.soft ? `\\blur${softBlur}` : "";
+  return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(outline)}${color}${fade}${sung}${blur}}`;
 }
 
 function pushDecor(
@@ -292,7 +296,15 @@ function place(look: LyricLook): string {
   const x = Math.round(look.x * 1920);
   const y = Math.round(look.y * 1080);
   const size = assFontSize(look.size, look.font);
-  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}}`;
+  const blur = look.soft ? `\\blur${softBlur}` : "";
+  return `{\\an5\\pos(${x},${y})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(look.color)}${blur}}`;
+}
+
+function withBlur(tag: string, look: LyricLook): string {
+  if (!look.soft) return tag;
+  const end = tag.lastIndexOf("}");
+  if (end < 0) return tag;
+  return `${tag.slice(0, end)}\\blur${softBlur}${tag.slice(end)}`;
 }
 
 function scriptHeader(look: LyricLook): string {

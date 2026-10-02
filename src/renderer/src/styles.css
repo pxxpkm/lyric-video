@@ -572,6 +572,12 @@ button.tiny.on {
   grid-column: 1 / -1;
 }
 
+.look .check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 input[type="color"] {
   width: 100%;
   height: 36px;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildKaraokeAss, karaokeCentiseconds } from "../../src/core/ass";
 import { lyricLine } from "../../src/core/lyrics";
-import { assColor, assFontSize, defaultLook, edgeOutlineAt } from "../../src/core/lyricLook";
+import { assColor, assFontSize, defaultLook, edgeOutlineAt, softBlur } from "../../src/core/lyricLook";
 import { decorDots, decorFadeTag, decorLayout, decorMoveWindow, setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
 import { exampleProject, parseProject } from "../../src/core/project";
@@ -356,6 +356,54 @@ describe("karaoke.ass", () => {
     const zero = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40, tracking: 0 });
     expect(zero).toContain("\\pos(960,846)");
     expect(zero).toContain("\\pos(960,926)");
+  });
+
+  it("未開柔邊就冇 \\blur", () => {
+    expect(buildKaraokeAss(testClipLines())).not.toContain("\\blur");
+    expect(defaultLook.soft).toBe(false);
+  });
+
+  it("柔邊只加喺歌詞，小點同位置保持原樣", () => {
+    const look = { ...defaultLook, soft: true };
+    const ass = buildKaraokeAss(testClipLines(), undefined, look);
+    const lyric = ass.split("\n").find((row) => row.includes("第一句"));
+    const trans = ass.split("\n").find((row) => row.includes("第二句譯文"));
+    expect(lyric).toContain(`\\blur${softBlur}`);
+    expect(lyric).not.toContain("\\blur4");
+    expect(lyric?.match(/\\blur/g)).toHaveLength(1);
+    expect(trans).toContain(`\\blur${softBlur}`);
+    expect(ass).toContain("\\pos(");
+    expect(ass).not.toContain("\\move");
+    const flown = buildKaraokeAss(testClipLines(), undefined, look, [
+      presetClip("1000|第一句", "第一句", 1000, 3000, "fly"),
+    ]);
+    const moving = flown.split("\n").find((row) => row.includes("第一句"));
+    expect(moving).toContain("\\move");
+    expect(moving).toContain(`\\blur${softBlur}`);
+    const line = lyricLine(1_000, "甲乙", {
+      words: [
+        { startMs: 0, durMs: 500, text: "甲" },
+        { startMs: 500, durMs: 500, text: "乙" },
+      ],
+    });
+    const timed = buildKaraokeAss([line], undefined, look);
+    expect(timed).toContain("\\k");
+    expect(timed).toContain(`\\blur${softBlur}`);
+    const dusty = buildKaraokeAss(testClipLines(), undefined, look, [
+      presetClip("1000|第一句", "第一句", 1000, 3000, "dust"),
+    ]);
+    const dustLyric = dusty.split("\n").find((row) => row.includes("第一句"));
+    const dots = dusty.split("\n").filter((row) => row.includes("●"));
+    expect(dustLyric).toContain(`\\blur${softBlur}`);
+    expect(dots.length).toBeGreaterThan(0);
+    expect(dots.every((row) => !row.includes("\\blur"))).toBe(true);
+    const vertical = buildKaraokeAss(testClipLines(), undefined, { ...look, flow: "vertical", size: 40 });
+    expect(vertical).toContain("\\pos(960,846)");
+    expect(vertical).toContain("\\pos(960,886)");
+    expect(vertical).toContain("\\pos(960,926)");
+    const glyphs = vertical.split("\n").filter((row) => row.includes("\\pos(960,886)") && !row.includes("●"));
+    expect(glyphs.length).toBeGreaterThan(0);
+    expect(glyphs.every((row) => row.includes(`\\blur${softBlur}`))).toBe(true);
   });
 
   it("正的延遲讓字幕晚出現", () => {

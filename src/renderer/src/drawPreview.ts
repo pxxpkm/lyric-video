@@ -1,6 +1,6 @@
 import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/preview";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
-import { canvasFont, defaultLook, edgeOutlineAt, isVerticalFlow, letterGap, mixHex, type LyricLook } from "../../core/lyricLook";
+import { canvasFont, defaultLook, edgeOutlineAt, isVerticalFlow, letterGap, mixHex, softBlur, type LyricLook } from "../../core/lyricLook";
 import {
   isDecor,
   lyricBands,
@@ -98,6 +98,7 @@ export function drawPreview(
   const transY = translated.y * height;
   ctx.save();
   ctx.globalAlpha = placed.opacity;
+  if (frame.text && look.soft) ctx.filter = `blur(${softBlur * scale}px)`;
   if (!frame.text) {
     ctx.font = canvasFont(look, Math.max(16, fontPx * 0.7));
     paint(ctx, "尚未有歌詞", x, y, look.color, look.outlineColor, edge);

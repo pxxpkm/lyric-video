@@ -25,7 +25,12 @@ export type LyricLook = {
   transY: number;
   /** 字與字之間的額外空位，1080 畫面的像素。原文同譯文共用。0 就同未加之前一樣。 */
   tracking: number;
+  /** 全首歌詞的固定柔邊。小點不加。 */
+  soft: boolean;
 };
+
+/** 1080 畫面的高斯模糊。參考檔喺 720p 用 4，呢度用較輕的 1.5，避免同裙邊疊到發糊。 */
+export const softBlur = 1.5;
 
 /** 舊檔只有譯文比例、未有譯文字級時用。64 × 0.56 = 36。 */
 const legacyTransScale = 0.56;
@@ -45,6 +50,7 @@ export const defaultLook: LyricLook = {
   transX: 0.5,
   transY: 0.82 + (64 * 1.25) / 1080,
   tracking: 0,
+  soft: false,
 };
 
 const aliases: Record<string, string> = {
@@ -77,6 +83,7 @@ export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) 
     transX: clamp(raw.transX, 0, 1, defaultLook.transX),
     transY: clamp(raw.transY, 0.08, 0.94, defaultLook.transY),
     tracking: Math.round(clamp(raw.tracking, 0, 8, defaultLook.tracking)),
+    soft: raw.soft === true,
   };
 }
 

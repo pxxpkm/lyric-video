@@ -90,6 +90,7 @@ export const projectSchema = z.object({
     transX: z.number().optional(),
     transY: z.number().optional(),
     tracking: z.number().default(0),
+    soft: z.boolean().default(false),
   }),
   decision: z.object({
     autoAccepted: z.boolean(),
@@ -195,6 +196,7 @@ export function exampleProject(): Project {
       transX: defaultLook.transX,
       transY: defaultLook.transY,
       tracking: defaultLook.tracking,
+      soft: defaultLook.soft,
     },
     motion: [],
     decision: { autoAccepted: false, score: 0, reason: "" },

@@ -39,6 +39,10 @@ describe("字體", () => {
     expect(parsed.style.transSize).toBe(defaultLook.transSize);
     expect(parsed.style.transColor).toBe(defaultLook.color);
     expect(parsed.style.tracking).toBe(0);
+    expect(parsed.style.soft).toBe(false);
+    expect(defaultLook.soft).toBe(false);
+    expect(clampLook({ ...defaultLook, soft: true }).soft).toBe(true);
+    expect(parseProject({ ...raw, style: { ...raw.style, soft: true } }).style.soft).toBe(true);
     expect(parseProject({ ...raw, style: { ...raw.style, tracking: 4 } }).style.tracking).toBe(4);
     expect(defaultLook.tracking).toBe(0);
     expect(clampLook({ ...defaultLook, tracking: 4 }).tracking).toBe(4);
