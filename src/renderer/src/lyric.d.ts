@@ -12,7 +12,12 @@ export type LyricBridge = {
   saveFile: (filePath: string, request: SaveRequest) => Promise<SaveResult>;
   createTestClip: () => Promise<PreviewSession>;
   loadProject: (projectPath: string) => Promise<PreviewSession>;
-  saveTiming: (projectPath: string, timing: PreviewSession["timing"], look: PreviewSession["look"]) => Promise<boolean>;
+  saveTiming: (
+    projectPath: string,
+    timing: PreviewSession["timing"],
+    look: PreviewSession["look"],
+    motion: PreviewSession["motion"],
+  ) => Promise<boolean>;
   chironFont: () => Promise<ArrayBuffer>;
   exportVideo: (request: {
     projectPath: string;
@@ -22,6 +27,7 @@ export type LyricBridge = {
     lines: PreviewSession["lines"];
     timing: PreviewSession["timing"];
     look: PreviewSession["look"];
+    motion: PreviewSession["motion"];
     title: string;
   }) => Promise<
     { ok: true; outPath: string; assPath: string } | { ok: false; error: string; cancelled?: boolean }

@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld("lyric", {
   saveFile: (filePath: string, request: unknown) => ipcRenderer.invoke("import:save-file", filePath, request),
   createTestClip: () => ipcRenderer.invoke("preview:test-clip"),
   loadProject: (projectPath: string) => ipcRenderer.invoke("preview:load", projectPath),
-  saveTiming: (projectPath: string, timing: unknown, look: unknown) =>
-    ipcRenderer.invoke("preview:save", projectPath, timing, look),
+  saveTiming: (projectPath: string, timing: unknown, look: unknown, motion: unknown) =>
+    ipcRenderer.invoke("preview:save", projectPath, timing, look, motion),
   chironFont: () => ipcRenderer.invoke("look:chiron"),
   exportVideo: (request: unknown) => ipcRenderer.invoke("export:video", request),
   onExportProgress: (callback: (text: string) => void) => {

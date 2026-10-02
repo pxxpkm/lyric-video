@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { defaultLook } from "./lyricLook";
+import { defaultLook, pairedTrans, resolvedTransColor, resolvedTransSize } from "./lyricLook";
+import { settleClip } from "./motion";
 
 const wordSchema = z.object({
   startMs: z.number().int(),
@@ -50,6 +51,24 @@ export const projectSchema = z.object({
     trans: z.record(z.string(), z.string()).default({}),
     added: z.array(addedSchema).default([]),
   }),
+  motion: z
+    .array(
+      z
+        .object({
+          id: z.string(),
+          text: z.string().default(""),
+          startMs: z.number(),
+          endMs: z.number(),
+          lineKey: z.string().default(""),
+          enter: z.object({ x: z.number(), y: z.number(), opacity: z.number() }),
+          leave: z.object({ x: z.number(), y: z.number(), opacity: z.number() }),
+          locked: z.boolean().optional(),
+          basis: z.literal("look").optional(),
+          trans: z.object({ x: z.number(), y: z.number() }).optional(),
+        })
+        .transform((clip) => ({ ...clip, locked: clip.locked ?? true })),
+    )
+    .default([]),
   style: z.object({
     showTrans: z.boolean(),
     karaoke: z.boolean(),
@@ -59,10 +78,16 @@ export const projectSchema = z.object({
     sungColor: z.string().default(defaultLook.sungColor),
     outline: z.number().default(defaultLook.outline),
     outlineColor: z.string().default(defaultLook.outlineColor),
-    transScale: z.number().default(defaultLook.transScale),
-    nextOpacity: z.number().default(defaultLook.nextOpacity),
+    transSize: z.number().optional(),
+    transColor: z.string().optional(),
+    flow: z.preprocess(
+      (value) => (value === "left" || value === "right" ? "vertical" : value),
+      z.enum(["horizontal", "vertical"]).default("horizontal"),
+    ),
     x: z.number().default(defaultLook.x),
     y: z.number().default(defaultLook.y),
+    transX: z.number().optional(),
+    transY: z.number().optional(),
   }),
   decision: z.object({
     autoAccepted: z.boolean(),
@@ -74,7 +99,60 @@ export const projectSchema = z.object({
 export type Project = z.infer<typeof projectSchema>;
 
 export function parseProject(input: unknown): Project {
-  return projectSchema.parse(input);
+  const project = projectSchema.parse(input);
+  const saved = { x: project.style.x, y: project.style.y };
+  const motion = project.motion.map((clip) => settleClip(clip, saved));
+  return {
+    ...project,
+    style: withTransPaint(withTransAnchor(undoParkedFlow(project.style, rawStyleFlow(input))), rawStyleRecord(input)),
+    motion,
+  };
+}
+
+function withTransPaint(style: Project["style"], raw: Record<string, unknown> | null): Project["style"] {
+  const scale = raw && typeof raw.transScale === "number" ? raw.transScale : undefined;
+  return {
+    ...style,
+    transSize: resolvedTransSize(style.size, style.transSize, scale),
+    transColor: resolvedTransColor(style.color, style.transColor),
+  };
+}
+
+function rawStyleRecord(input: unknown): Record<string, unknown> | null {
+  if (input == null || typeof input !== "object" || !("style" in input)) return null;
+  const style = input.style;
+  if (style == null || typeof style !== "object") return null;
+  return style as Record<string, unknown>;
+}
+
+function withTransAnchor(style: Project["style"]): Project["style"] {
+  if (typeof style.transX === "number" && typeof style.transY === "number") return style;
+  const paired = pairedTrans(style);
+  return {
+    ...style,
+    transX: typeof style.transX === "number" ? style.transX : paired.transX,
+    transY: typeof style.transY === "number" ? style.transY : paired.transY,
+  };
+}
+
+const parkedFlow = {
+  left: { x: 0.1, y: 0.5 },
+  right: { x: 0.9, y: 0.5 },
+} as const;
+
+function rawStyleFlow(input: unknown): unknown {
+  if (input == null || typeof input !== "object" || !("style" in input)) return undefined;
+  const style = input.style;
+  if (style == null || typeof style !== "object" || !("flow" in style)) return undefined;
+  return style.flow;
+}
+
+function undoParkedFlow(style: Project["style"], rawFlow: unknown): Project["style"] {
+  if (rawFlow !== "left" && rawFlow !== "right") return style;
+  const anchor = parkedFlow[rawFlow];
+  const parked = Math.abs(style.x - anchor.x) < 0.021 && Math.abs(style.y - anchor.y) < 0.021;
+  if (!parked) return style;
+  return { ...style, x: defaultLook.x, y: defaultLook.y };
 }
 
 export function exampleProject(): Project {
@@ -107,11 +185,15 @@ export function exampleProject(): Project {
       sungColor: defaultLook.sungColor,
       outline: defaultLook.outline,
       outlineColor: defaultLook.outlineColor,
-      transScale: defaultLook.transScale,
-      nextOpacity: defaultLook.nextOpacity,
+      transSize: defaultLook.transSize,
+      transColor: defaultLook.transColor,
+      flow: "horizontal",
       x: defaultLook.x,
       y: defaultLook.y,
+      transX: defaultLook.transX,
+      transY: defaultLook.transY,
     },
+    motion: [],
     decision: { autoAccepted: false, score: 0, reason: "" },
   };
 }

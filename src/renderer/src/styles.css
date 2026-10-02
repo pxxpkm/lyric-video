@@ -47,6 +47,250 @@ h1 {
   gap: 12px;
 }
 
+main.studio {
+  width: 100%;
+  height: 100vh;
+  min-height: 0;
+  padding: 12px 16px 16px;
+  justify-items: stretch;
+  align-content: stretch;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+main.studio .topbar {
+  width: 100%;
+}
+
+main.studio h1 {
+  font-size: 1.2rem;
+}
+
+.title-block {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+}
+
+main.studio .status {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.studio-body {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+  gap: 16px;
+}
+
+.stage-col {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.stage-fit {
+  min-width: 0;
+  min-height: 0;
+  container-type: size;
+  display: grid;
+  place-items: center;
+}
+
+.stage-fit .stage {
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  max-width: 100%;
+  max-height: 100%;
+  height: auto;
+}
+
+.stage-foot {
+  display: grid;
+  gap: 8px;
+}
+
+.stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.stage-actions .lock {
+  padding-bottom: 0;
+}
+
+.stage-actions .export {
+  margin-left: auto;
+}
+
+.readout {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.readout[hidden] {
+  display: none;
+}
+
+.readout span {
+  background: #1c2028;
+  border: 1px solid #2c3340;
+  border-radius: 8px;
+  padding: 4px 8px;
+  color: #f3f5f8;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dock {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  container-type: inline-size;
+  container-name: dock;
+}
+
+.timing-global,
+.timing-edit {
+  display: grid;
+  gap: 8px;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.fold {
+  container-type: inline-size;
+  container-name: fold;
+}
+
+@container fold (min-width: 680px) {
+  .look {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container dock (min-width: 760px) {
+  .folds {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  .timing {
+    grid-template-columns: minmax(200px, 0.9fr) minmax(240px, 1.1fr);
+    align-items: start;
+  }
+
+  .timing .line-column {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .timing .timing-global {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .timing .timing-edit {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .lines {
+    height: min(560px, 68vh);
+  }
+}
+
+@media (max-aspect-ratio: 1/1), (max-width: 1040px) {
+  main.studio {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .studio-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .stage-col {
+    grid-template-rows: auto auto;
+  }
+
+  .stage-fit {
+    height: min(56.25vw, 70vh);
+  }
+
+  .dock {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 520px) {
+  .pair {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-actions .export {
+    margin-left: 0;
+  }
+}
+
+.tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.tabs button.on {
+  background: #3300d4;
+  color: #f3f5f8;
+}
+
+.pane.off {
+  display: none;
+}
+
+.folds {
+  display: grid;
+  gap: 8px;
+}
+
+.fold-head {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #1c2028;
+  color: #f3f5f8;
+  border: 1px solid #2c3340;
+  padding: 10px 12px;
+  font-weight: 650;
+}
+
+.fold-head span:last-child {
+  font-weight: 450;
+  color: #b7c0cc;
+  font-size: 0.85rem;
+}
+
+.fold-body {
+  padding-top: 4px;
+}
+
 label {
   display: grid;
   gap: 6px;
@@ -56,6 +300,7 @@ label {
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: end;
 }
@@ -193,8 +438,15 @@ button:disabled {
   gap: 8px;
 }
 
+.line-column {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
 .lines {
   height: 220px;
+  width: 100%;
   overflow: auto;
   border: 1px solid #2c3340;
   border-radius: 8px;
@@ -279,6 +531,11 @@ button:disabled {
 .tiny {
   padding: 4px 8px;
   font-size: 0.85rem;
+}
+
+button.tiny.on {
+  background: #3300d4;
+  color: #f3f5f8;
 }
 
 .icon {

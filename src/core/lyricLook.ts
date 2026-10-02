@@ -7,6 +7,8 @@ export const lyricFonts: readonly LyricFont[] = [
   { id: "kai", label: "標楷體", family: "KaiTi", ass: "KaiTi" },
 ];
 
+export type LyricFlow = "horizontal" | "vertical";
+
 export type LyricLook = {
   font: string;
   size: number;
@@ -14,11 +16,17 @@ export type LyricLook = {
   sungColor: string;
   outline: number;
   outlineColor: string;
-  transScale: number;
-  nextOpacity: number;
+  transSize: number;
+  transColor: string;
+  flow: LyricFlow;
   x: number;
   y: number;
+  transX: number;
+  transY: number;
 };
+
+/** 舊檔只有譯文比例、未有譯文字級時用。64 × 0.56 = 36。 */
+const legacyTransScale = 0.56;
 
 export const defaultLook: LyricLook = {
   font: "chiron",
@@ -27,10 +35,13 @@ export const defaultLook: LyricLook = {
   sungColor: "#F0D78C",
   outline: 6,
   outlineColor: "#1B140C",
-  transScale: 0.56,
-  nextOpacity: 0.4,
+  transSize: Math.round(64 * legacyTransScale),
+  transColor: "#E8D7C4",
+  flow: "horizontal",
   x: 0.5,
   y: 0.82,
+  transX: 0.5,
+  transY: 0.82 + (64 * 1.25) / 1080,
 };
 
 const aliases: Record<string, string> = {
@@ -44,24 +55,63 @@ export function lyricFont(id: string | null | undefined): LyricFont {
   return lyricFonts.find((font) => font.id === mapped) ?? lyricFonts[0];
 }
 
-export function clampLook(input: Partial<LyricLook> | null | undefined): LyricLook {
+export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) | null | undefined): LyricLook {
   const raw = input ?? {};
+  const size = clamp(raw.size, 24, 120, defaultLook.size);
+  const color = hex(raw.color, defaultLook.color);
   return {
     font: lyricFont(raw.font).id,
-    size: clamp(raw.size, 24, 120, defaultLook.size),
-    color: hex(raw.color, defaultLook.color),
+    size,
+    color,
     sungColor: hex(raw.sungColor, defaultLook.sungColor),
     outline: clamp(raw.outline, 0, 16, defaultLook.outline),
     outlineColor: hex(raw.outlineColor, defaultLook.outlineColor),
-    transScale: clamp(raw.transScale, 0.4, 0.9, defaultLook.transScale),
-    nextOpacity: clamp(raw.nextOpacity, 0.05, 1, defaultLook.nextOpacity),
-    x: clamp(raw.x, 0.04, 0.96, defaultLook.x),
+    transSize: resolvedTransSize(size, raw.transSize, raw.transScale),
+    transColor: resolvedTransColor(color, raw.transColor),
+    flow: flowOf(raw.flow),
+    x: clamp(raw.x, 0, 1, defaultLook.x),
     y: clamp(raw.y, 0.08, 0.94, defaultLook.y),
+    transX: clamp(raw.transX, 0, 1, defaultLook.transX),
+    transY: clamp(raw.transY, 0.08, 0.94, defaultLook.transY),
+  };
+}
+
+export function resolvedTransColor(color: string | undefined, transColor: string | undefined): string {
+  const main = hex(color, defaultLook.color);
+  return hex(transColor, main);
+}
+
+/** 已有譯文字級就用它。舊檔只得比例時，用原文大小乘比例，之後兩邊各自改。 */
+export function resolvedTransSize(size: number, transSize: number | undefined, transScale: number | undefined): number {
+  if (typeof transSize === "number" && Number.isFinite(transSize)) return clamp(transSize, 24, 120, defaultLook.transSize);
+  const scale = typeof transScale === "number" && Number.isFinite(transScale) ? transScale : legacyTransScale;
+  const basis = Number.isFinite(size) ? size : defaultLook.size;
+  return clamp(Math.round(basis * scale), 24, 120, defaultLook.transSize);
+}
+
+/** 舊檔未分開譯文位置時，用以前的間距補上。之後各自調，唔再跟住原文。 */
+export function pairedTrans(look: { x: number; y: number; size: number; flow?: string }): { transX: number; transY: number } {
+  const size = typeof look.size === "number" && Number.isFinite(look.size) ? look.size : defaultLook.size;
+  if (isVerticalFlow(look.flow)) {
+    return {
+      transX: clamp(look.x + (size * 1.25) / 1920, 0, 1, look.x),
+      transY: clamp(look.y, 0.08, 0.94, defaultLook.y),
+    };
+  }
+  return {
+    transX: clamp(look.x, 0, 1, defaultLook.x),
+    transY: clamp(look.y + (size * 1.25) / 1080, 0.08, 0.94, defaultLook.y),
   };
 }
 
 export function moveLook(look: LyricLook, dx: number, dy: number): LyricLook {
-  return clampLook({ ...look, x: look.x + dx, y: look.y + dy });
+  return clampLook({
+    ...look,
+    x: look.x + dx,
+    y: look.y + dy,
+    transX: look.transX + dx,
+    transY: look.transY + dy,
+  });
 }
 
 export function assColor(hexColor: string): string {
@@ -90,6 +140,14 @@ export function assFontScale(fontId: string): number {
 
 export function assFontSize(size: number, fontId: string): number {
   return Math.max(1, Math.round(size * assFontScale(fontId)));
+}
+
+export function isVerticalFlow(flow: string | undefined): boolean {
+  return flow === "vertical" || flow === "left" || flow === "right";
+}
+
+function flowOf(value: string | undefined): LyricFlow {
+  return isVerticalFlow(value) ? "vertical" : "horizontal";
 }
 
 function clamp(value: number | undefined, min: number, max: number, fallback: number): number {

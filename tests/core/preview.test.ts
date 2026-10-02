@@ -14,7 +14,7 @@ describe("預覽時間軸", () => {
       key: "1000|第一句",
       text: "第一句",
       wordIndex: -1,
-      nextText: "第二句",
+      trans: "",
     });
   });
 
@@ -22,7 +22,6 @@ describe("預覽時間軸", () => {
     expect(previewFrame(lines, 4_500)).toMatchObject({
       text: "第二句",
       trans: "第二句譯文",
-      nextText: "第三句",
     });
   });
 

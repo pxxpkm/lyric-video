@@ -11,6 +11,7 @@ import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importSe
 import { IMPORT_FAIL } from "./media";
 import { createTestClip, loadPreview, savePreviewTiming } from "./testClip";
 import { clampLook, type LyricLook } from "../core/lyricLook";
+import type { MotionClip } from "../core/motion";
 import { timingFromProject } from "../core/projectTiming";
 import type { StoredTiming } from "../shared/preview";
 import type { SaveRequest } from "../shared/import";
@@ -65,6 +66,7 @@ function exportRequest(value: unknown): ExportRequest | null {
     look: row.look != null && typeof row.look === "object" ? clampLook(row.look as Partial<LyricLook>) : undefined,
     title: typeof row.title === "string" ? row.title : "",
     outPath: "",
+    motion: Array.isArray(row.motion) ? (row.motion as ExportRequest["motion"]) : [],
   };
 }
 
@@ -172,10 +174,15 @@ export function registerImportIpc(): void {
     event.sender.send("queue:update", listJobs());
   });
 
-  ipcMain.handle("preview:save", async (_event, projectPath: unknown, timing: unknown, look: unknown) => {
+  ipcMain.handle("preview:save", async (_event, projectPath: unknown, timing: unknown, look: unknown, motion: unknown) => {
     if (typeof projectPath !== "string" || timing == null || typeof timing !== "object") return false;
     const nextLook = look != null && typeof look === "object" ? clampLook(look as Partial<LyricLook>) : undefined;
-    await savePreviewTiming(projectPath, timingFromProject(timing as StoredTiming), nextLook);
+    await savePreviewTiming(
+      projectPath,
+      timingFromProject(timing as StoredTiming),
+      nextLook,
+      Array.isArray(motion) ? (motion as MotionClip[]) : undefined,
+    );
     return true;
   });
   ipcMain.handle("look:chiron", async () => {

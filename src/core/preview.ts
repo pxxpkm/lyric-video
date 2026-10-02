@@ -1,4 +1,4 @@
-import { lineIsActive, lineKey, lyricLine, nextSungIndex, timeOfMs, type LyricLine, type LyricWord } from "./lyrics";
+import { lineIsActive, lineKey, lyricLine, timeOfMs, type LyricLine, type LyricWord } from "./lyrics";
 import { defaultTiming, type TrackTiming } from "./timing";
 
 export const TEST_CLIP_MS = 10_000;
@@ -24,7 +24,6 @@ export type PreviewFrame = {
   wordIndex: number;
   text: string;
   trans: string;
-  nextText: string;
 };
 
 export function lyricClockMs(mediaMs: number, offsetMs: number, rate: number): number {
@@ -55,10 +54,9 @@ export function previewFrame(lines: LyricLine[], posMs: number, timing: TrackTim
     if (lineIsActive(lines, i, posMs, timing.lines, timing.holds)) index = i;
   }
   if (index < 0) {
-    return { index: -1, key: "", atMs: 0, wordIndex: -1, text: "", trans: "", nextText: "" };
+    return { index: -1, key: "", atMs: 0, wordIndex: -1, text: "", trans: "" };
   }
   const line = lines[index];
-  const next = nextSungIndex(lines, index);
   const atMs = timeOfMs(line, timing.lines);
   return {
     index,
@@ -67,7 +65,6 @@ export function previewFrame(lines: LyricLine[], posMs: number, timing: TrackTim
     wordIndex: activeWordIndex(line.words, posMs - atMs),
     text: line.text,
     trans: line.translatedText ?? "",
-    nextText: next >= 0 ? lines[next].text : "",
   };
 }
 

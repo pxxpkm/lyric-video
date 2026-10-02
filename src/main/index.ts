@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol } from "electron";
+import { app, BrowserWindow, protocol, screen } from "electron";
 import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,9 +24,13 @@ function loadDict(): void {
 }
 
 function createWindow(): void {
+  const area = screen.getPrimaryDisplay().workArea;
+  const portrait = area.height > area.width;
+  const width = Math.min(area.width, portrait ? 1100 : 1440);
+  const height = Math.min(area.height, portrait ? Math.round(area.height * 0.92) : 900);
   const win = new BrowserWindow({
-    width: 960,
-    height: 760,
+    width,
+    height,
     show: false,
     title: "歌詞影片",
     autoHideMenuBar: true,

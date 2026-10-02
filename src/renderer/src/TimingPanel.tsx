@@ -2,12 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   applyEdits,
   formatShownLrc,
-  formatStamp,
   lineKey,
   parseClipboardLyrics,
   parseTimingTags,
   replaceShown,
-  timeOfMs,
   type LyricLine,
 } from "../../core/lyrics";
 import {
@@ -27,28 +25,28 @@ import {
   withoutLine,
   type TrackTiming,
 } from "../../core/timing";
-import { mediaMsForLyric } from "../../core/preview";
 import { IconButton, ReplayIcon, UndoIcon, ZeroIcon } from "./icons";
-
-const ROW = 52;
+import { LineList } from "./LineList";
 
 export function TimingPanel({
   baseLines,
   timing,
   lyricMs,
+  selectedKey,
+  onSelect,
   onReplace,
   onReplay,
 }: {
   baseLines: LyricLine[];
   timing: TrackTiming;
   lyricMs: number;
+  selectedKey: string | null;
+  onSelect: (key: string) => void;
   onReplace: (recipe: (current: TrackTiming) => TrackTiming) => void;
   onReplay: (line: LyricLine) => void;
 }) {
   const shown = useMemo(() => applyEdits(baseLines, timing), [baseLines, timing]);
-  const [scroll, setScroll] = useState(0);
   const [lrc, setLrc] = useState("");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [offsetPast, setOffsetPast] = useState<number[]>([]);
   const [ratePast, setRatePast] = useState<number[]>([]);
   const timingRef = useRef(timing);
@@ -56,10 +54,6 @@ export function TimingPanel({
   const gesture = useRef<"offset" | "rate" | null>(null);
   timingRef.current = timing;
   selectedKeyRef.current = selectedKey;
-  const height = 180;
-  const start = Math.max(0, Math.floor(scroll / ROW) - 1);
-  const count = Math.ceil(height / ROW) + 3;
-  const slice = shown.slice(start, start + count);
   const selected = shown.find((line) => lineKey(line) === selectedKey) ?? null;
   const selectedShift = selected ? (timing.lines?.[lineKey(selected)] ?? 0) : 0;
   const selectedHold = selected ? (timing.holds?.[lineKey(selected)] ?? 0) : 0;
@@ -130,6 +124,7 @@ export function TimingPanel({
 
   return (
     <div className="timing">
+      <div className="timing-global">
       <div className="row">
         <span className="meta">延遲</span>
         <RepeatButton label="−50 ms" title="歌詞慢了" kind="ms" sign={-1} onStep={stepOffset} onRelease={endGesture} />
@@ -170,27 +165,9 @@ export function TimingPanel({
           <UndoIcon />
         </IconButton>
       </div>
-      <div className="lines" onScroll={(event) => setScroll(event.currentTarget.scrollTop)}>
-        <div style={{ height: Math.max(shown.length, 1) * ROW, position: "relative" }}>
-          {shown.length === 0 ? <p className="meta">尚未有歌詞</p> : null}
-          {slice.map((line, index) => {
-            const key = lineKey(line);
-            const selectedRow = key === selectedKey;
-            return (
-              <button
-                key={`${key}-${start + index}`}
-                type="button"
-                className={selectedRow ? "pick-row selected" : "pick-row"}
-                style={{ top: (start + index) * ROW }}
-                onClick={() => setSelectedKey(key)}
-              >
-                <span>{lineCaption(line, timing)}</span>
-                {line.translatedText ? <span className="trans">{line.translatedText}</span> : null}
-              </button>
-            );
-          })}
-        </div>
       </div>
+      <LineList lines={shown} timing={timing} selectedKey={selectedKey} onSelect={onSelect} />
+      <div className="timing-edit">
       <div className="row">
         <span className="meta">呢句</span>
         <RepeatButton label="−" title="歌詞慢了" kind="ms" sign={-1} disabled={!selected} onStep={stepLine} />
@@ -214,34 +191,36 @@ export function TimingPanel({
         <span className="meta read">{formatHold(selectedHold)}</span>
         <RepeatButton label="＋" title="長 0.25 秒，按住會連續加" kind="stay" sign={1} disabled={!selected} onStep={stepHold} />
       </div>
-      <label>
-        歌詞
-        <input
-          type="text"
-          disabled={!selected}
-          value={selected?.text ?? ""}
-          onChange={(event) => {
-            if (!selected) return;
-            const key = lineKey(selected);
-            const value = event.target.value;
-            onReplace((current) => withLineText(current, key, value));
-          }}
-        />
-      </label>
-      <label>
-        譯文
-        <input
-          type="text"
-          disabled={!selected}
-          value={selected?.translatedText ?? ""}
-          onChange={(event) => {
-            if (!selected) return;
-            const key = lineKey(selected);
-            const value = event.target.value;
-            onReplace((current) => withLineTrans(current, key, value));
-          }}
-        />
-      </label>
+      <div className="pair">
+        <label>
+          歌詞
+          <input
+            type="text"
+            disabled={!selected}
+            value={selected?.text ?? ""}
+            onChange={(event) => {
+              if (!selected) return;
+              const key = lineKey(selected);
+              const value = event.target.value;
+              onReplace((current) => withLineText(current, key, value));
+            }}
+          />
+        </label>
+        <label>
+          譯文
+          <input
+            type="text"
+            disabled={!selected}
+            value={selected?.translatedText ?? ""}
+            onChange={(event) => {
+              if (!selected) return;
+              const key = lineKey(selected);
+              const value = event.target.value;
+              onReplace((current) => withLineTrans(current, key, value));
+            }}
+          />
+        </label>
+      </div>
       <button
         type="button"
         className="tiny"
@@ -280,19 +259,9 @@ export function TimingPanel({
           從欄套用
         </button>
       </div>
+      </div>
     </div>
   );
-}
-
-function lineCaption(line: LyricLine, timing: TrackTiming): string {
-  const key = lineKey(line);
-  const at = Math.round(mediaMsForLyric(timeOfMs(line, timing.lines), timing.offsetMs, timing.rate));
-  const shift = timing.lines?.[key] ?? 0;
-  const hold = timing.holds?.[key] ?? 0;
-  let mark = "";
-  if (shift !== 0) mark += `  ${formatOffset(shift)}`;
-  if (hold !== 0) mark += `  停留${formatHold(hold)}`;
-  return `${formatStamp(at)}${mark}  ${line.text}`;
 }
 
 function RepeatButton({

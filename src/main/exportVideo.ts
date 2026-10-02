@@ -2,6 +2,7 @@ import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/p
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { buildKaraokeAss } from "../core/ass";
 import { exportPartPath } from "../core/exportName";
+import type { MotionClip } from "../core/motion";
 import { clampLook, type LyricLook } from "../core/lyricLook";
 import { lyricLine, type LyricLine } from "../core/lyrics";
 import { timingFromProject } from "../core/projectTiming";
@@ -18,6 +19,7 @@ export type ExportRequest = {
   look?: LyricLook;
   title?: string;
   outPath: string;
+  motion?: MotionClip[];
 };
 
 export async function exportProject(
@@ -34,7 +36,11 @@ export async function exportProject(
       words: line.words.length > 0 ? line.words : null,
     }),
   ) satisfies LyricLine[];
-  await writeFile(assPath, buildKaraokeAss(lines, timingFromProject(request.timing), clampLook(request.look)), "utf8");
+  await writeFile(
+    assPath,
+    buildKaraokeAss(lines, timingFromProject(request.timing), clampLook(request.look), request.motion ?? []),
+    "utf8",
+  );
 
   const outPath = request.outPath;
   await mkdir(dirname(outPath), { recursive: true });
