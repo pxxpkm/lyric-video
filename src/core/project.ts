@@ -65,6 +65,10 @@ export const projectSchema = z.object({
           locked: z.boolean().optional(),
           basis: z.literal("look").optional(),
           trans: z.object({ x: z.number(), y: z.number() }).optional(),
+          preset: z.preprocess(
+            (value) => (value === "fly" || value === "scale" || value === "turn" || value === "tint" ? value : undefined),
+            z.enum(["fly", "scale", "turn", "tint"]).optional(),
+          ),
         })
         .transform((clip) => ({ ...clip, locked: clip.locked ?? true })),
     )

@@ -4,6 +4,9 @@ import type { TrackTiming } from "./timing";
 
 export type MotionFrame = { x: number; y: number; opacity: number };
 
+/** 一句一個。冇有就停住。存檔只存呢個名，取樣時先展開。 */
+export type LinePreset = "fly" | "scale" | "turn" | "tint";
+
 /** x、y 係相對成首位置的偏移。畫面位置 = 成首 + 偏移。basis 為 "look" 先當偏移；舊檔沒有 basis 時，x、y 仍是畫面絕對位置。 */
 export type MotionClip = {
   id: string;
@@ -17,9 +20,15 @@ export type MotionClip = {
   basis?: "look";
   /** 譯文相對成首譯文位置的偏移。沒有就跟原文偏移，舊檔先係咁。 */
   trans?: { x: number; y: number };
+  preset?: LinePreset;
 };
 
-export type Placed = { x: number; y: number; opacity: number };
+export type Placed = { x: number; y: number; opacity: number; scale: number; deg: number; tint: number };
+
+export type Pose = { dy: number; scale: number; deg: number; tint: number };
+
+/** 1080 高的畫面，飛入由定位下面呢幾多像素開始。 */
+export const FLY_PX = 72;
 
 export type LyricBand = { x: number; y: number; w: number; h: number };
 
@@ -61,9 +70,65 @@ export function transOffset(clip: MotionClip): { x: number; y: number } {
   return clip.trans ?? { x: clip.enter.x, y: clip.enter.y };
 }
 
-export function sampleTrans(clip: MotionClip, look: { transX: number; transY: number }): { x: number; y: number } {
+export function sampleTrans(
+  clip: MotionClip,
+  look: { transX: number; transY: number },
+  mediaMs?: number,
+  startMs = clip.startMs,
+  endMs = clip.endMs,
+): { x: number; y: number; scale: number; deg: number; tint: number } {
   const offset = transOffset(clip);
-  return { x: look.transX + offset.x, y: look.transY + offset.y };
+  const pose = mediaMs == null ? restPose() : samplePose(clip.preset, mediaMs, startMs, endMs);
+  return {
+    x: look.transX + offset.x,
+    y: look.transY + offset.y + pose.dy,
+    scale: pose.scale,
+    deg: pose.deg,
+    tint: pose.tint,
+  };
+}
+
+export function restPose(): Pose {
+  return { dy: 0, scale: 1, deg: 0, tint: 0 };
+}
+
+/** 飛入：最多 350 毫秒，唔長過句長四分之一，最短 120，亦唔可以長過句長。 */
+export function flyMs(spanMs: number): number {
+  const span = Math.max(0, spanMs);
+  return Math.round(Math.min(span, Math.max(120, Math.min(350, span / 4))));
+}
+
+export function pulseMs(spanMs: number): number {
+  return Math.round(Math.min(300, Math.max(0, spanMs)));
+}
+
+export function tintMs(spanMs: number): number {
+  return Math.round(Math.max(0, spanMs) * 0.4);
+}
+
+export function samplePose(preset: LinePreset | undefined, mediaMs: number, startMs: number, endMs: number): Pose {
+  const rest = restPose();
+  if (!preset) return rest;
+  const span = Math.max(0, endMs - startMs);
+  const elapsed = Math.min(Math.max(0, mediaMs - startMs), span);
+  if (preset === "fly") {
+    const dur = flyMs(span);
+    const t = dur <= 0 ? 1 : Math.min(1, elapsed / dur);
+    return { ...rest, dy: (FLY_PX / 1080) * (1 - t) };
+  }
+  if (preset === "scale") {
+    const dur = pulseMs(span);
+    const t = dur <= 0 ? 1 : Math.min(1, elapsed / dur);
+    return { ...rest, scale: 0.82 + 0.18 * t };
+  }
+  if (preset === "turn") {
+    const dur = pulseMs(span);
+    const t = dur <= 0 ? 1 : Math.min(1, elapsed / dur);
+    return { ...rest, deg: -6 * (1 - t) };
+  }
+  const dur = tintMs(span);
+  const t = dur <= 0 ? 1 : Math.min(1, elapsed / dur);
+  return { ...rest, tint: t };
 }
 
 export function sampleClip(
@@ -75,10 +140,14 @@ export function sampleClip(
 ): Placed {
   const span = Math.max(1, endMs - startMs);
   const t = Math.min(1, Math.max(0, (mediaMs - startMs) / span));
+  const pose = samplePose(clip.preset, mediaMs, startMs, endMs);
   return {
     x: look.x + clip.enter.x,
-    y: look.y + clip.enter.y,
+    y: look.y + clip.enter.y + pose.dy,
     opacity: lerp(clip.enter.opacity, clip.leave.opacity, t),
+    scale: pose.scale,
+    deg: pose.deg,
+    tint: pose.tint,
   };
 }
 
@@ -89,15 +158,48 @@ export function assFadeTag(clip: MotionClip, startMs = clip.startMs, endMs = cli
   return a0 === 0 && a1 === 0 ? "" : `\\fade(${a0},${a1},${a1},0,${dur},${dur},${dur})`;
 }
 
+/** 定位上的預設標籤。飛入只寫 \move，唔再加 \pos。變色由呼叫端決定加唔加。 */
+export function assPoseTags(preset: LinePreset | undefined, x: number, y: number, spanMs: number): string {
+  const pos = `\\pos(${x},${y})`;
+  if (preset === "fly") {
+    return `\\move(${x},${y + FLY_PX},${x},${y},0,${flyMs(spanMs)})`;
+  }
+  if (preset === "scale") {
+    return `${pos}\\fscx82\\fscy82\\t(0,${pulseMs(spanMs)},\\fscx100\\fscy100)`;
+  }
+  if (preset === "turn") {
+    return `${pos}\\frz-6\\t(0,${pulseMs(spanMs)},\\frz0)`;
+  }
+  return pos;
+}
+
 export function assMotion(
   clip: MotionClip,
   look: { x: number; y: number },
   startMs = clip.startMs,
   endMs = clip.endMs,
+  extra = "",
 ): string {
-  const x1 = Math.round((look.x + clip.enter.x) * 1920);
-  const y1 = Math.round((look.y + clip.enter.y) * 1080);
-  return `{\\an5\\pos(${x1},${y1})${assFadeTag(clip, startMs, endMs)}}`;
+  const x = Math.round((look.x + clip.enter.x) * 1920);
+  const y = Math.round((look.y + clip.enter.y) * 1080);
+  return wrapAnchor(clip, x, y, startMs, endMs, extra);
+}
+
+export function assTransMotion(
+  clip: MotionClip,
+  look: { transX: number; transY: number },
+  startMs = clip.startMs,
+  endMs = clip.endMs,
+  extra = "",
+): string {
+  const offset = transOffset(clip);
+  const x = Math.round((look.transX + offset.x) * 1920);
+  const y = Math.round((look.transY + offset.y) * 1080);
+  return wrapAnchor(clip, x, y, startMs, endMs, extra);
+}
+
+function wrapAnchor(clip: MotionClip, x: number, y: number, startMs: number, endMs: number, extra: string): string {
+  return `{\\an5${assPoseTags(clip.preset, x, y, endMs - startMs)}${extra}${assFadeTag(clip, startMs, endMs)}}`;
 }
 
 export function placeLineClip(
@@ -205,6 +307,40 @@ export function setLineFade(
       ? { ...clip, text, startMs, endMs, enter: { ...clip.enter, opacity } }
       : { ...clip, text, startMs, endMs, leave: { ...clip.leave, opacity } };
   });
+}
+
+export function setLinePreset(
+  clips: MotionClip[],
+  lineKey: string,
+  text: string,
+  startMs: number,
+  endMs: number,
+  preset: LinePreset | null,
+): MotionClip[] {
+  const existing = clips.find((clip) => clip.lineKey === lineKey);
+  if (!existing) {
+    if (!preset) return clips;
+    const frame = { x: 0, y: 0, opacity: 1 };
+    return [...clips, { ...lineClip(lineKey, text, startMs, endMs, frame, { ...frame }), trans: { x: 0, y: 0 }, preset }];
+  }
+  return clips.map((clip) => {
+    if (clip.lineKey !== lineKey) return clip;
+    const next = { ...clip, text, startMs, endMs };
+    if (preset) return { ...next, preset };
+    delete next.preset;
+    return next;
+  });
+}
+
+export function setLinesPreset(
+  clips: MotionClip[],
+  lines: { lineKey: string; text: string; startMs: number; endMs: number }[],
+  preset: LinePreset | null,
+): MotionClip[] {
+  return lines.reduce(
+    (next, line) => setLinePreset(next, line.lineKey, line.text, line.startMs, line.endMs, preset),
+    clips,
+  );
 }
 
 export function clearLineMotion(clips: MotionClip[], lineKey: string): MotionClip[] {

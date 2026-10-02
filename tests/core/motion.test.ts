@@ -2,16 +2,24 @@ import { describe, expect, it } from "vitest";
 import {
   addFreeClip,
   assMotion,
+  assTransMotion,
+  clearLineMotion,
   clearLineMotions,
+  flyMs,
   lyricBands,
   placeLineClip,
   placeTransClip,
+  pulseMs,
   sampleTrans,
+  setLinePreset,
+  setLinesPreset,
+  tintMs,
   verticalColumns,
   pointOnBands,
   sampleClip,
   setLineFade,
   setLinesFade,
+  FLY_PX,
   type MotionClip,
 } from "../../src/core/motion";
 import { exampleProject, parseProject } from "../../src/core/project";
@@ -189,6 +197,110 @@ describe("片段運動", () => {
     expect(pointOnBands({ x: 100, y: 240 }, [cols.main, cols.trans])).toBe(true);
     expect(pointOnBands({ x: 100, y: 280 }, [cols.main, cols.trans])).toBe(false);
     expect(pointOnBands({ x: 320, y: 180 }, [cols.main, cols.trans])).toBe(true);
+  });
+
+  it("飛入由定位下面移到定位，之後停住", () => {
+    expect(flyMs(2000)).toBe(350);
+    expect(flyMs(800)).toBe(200);
+    expect(flyMs(400)).toBe(120);
+    expect(flyMs(80)).toBe(80);
+    const flown: MotionClip = { ...clip, preset: "fly", enter: { ...clip.enter, opacity: 1 }, leave: { ...clip.enter, opacity: 1 } };
+    const start = sampleClip(flown, 0, look);
+    const rest = sampleClip(flown, 1000, look);
+    expect(start.x).toBeCloseTo(rest.x);
+    expect(start.y).toBeCloseTo(rest.y + FLY_PX / 1080);
+    expect(sampleClip(flown, flyMs(1000), look).y).toBeCloseTo(rest.y);
+    const tag = assMotion(flown, look);
+    const move = tag.match(/\\move\((\d+),(\d+),(\d+),(\d+),0,(\d+)\)/);
+    expect(move).toBeTruthy();
+    expect(Number(move?.[3])).toBe(Math.round(rest.x * 1920));
+    expect(Number(move?.[4])).toBe(Math.round(rest.y * 1080));
+    expect(Number(move?.[2])).toBe(Number(move?.[4]) + FLY_PX);
+    expect(Number(move?.[5])).toBe(flyMs(1000));
+    expect(tag).not.toContain("\\pos");
+    const trans = sampleTrans(flown, look, 0);
+    const transRest = sampleTrans(flown, look, 1000);
+    expect(trans.y - transRest.y).toBeCloseTo(start.y - rest.y);
+    expect(assTransMotion(flown, look)).toContain("\\move");
+    expect(assTransMotion(flown, look)).not.toContain("\\pos");
+  });
+
+  it("放大同擺正只喺句頭，變色用句頭四成", () => {
+    expect(pulseMs(2000)).toBe(300);
+    expect(pulseMs(80)).toBe(80);
+    expect(tintMs(2000)).toBe(800);
+    const scaled: MotionClip = { ...clip, preset: "scale" };
+    expect(sampleClip(scaled, 0, look).scale).toBeCloseTo(0.82);
+    expect(sampleClip(scaled, 300, look).scale).toBeCloseTo(1);
+    expect(assMotion(scaled, look)).toContain("\\fscx82\\fscy82\\t(0,300,\\fscx100\\fscy100)");
+    expect(assMotion(scaled, look)).not.toContain("\\move");
+    const turned: MotionClip = { ...clip, preset: "turn" };
+    expect(sampleClip(turned, 0, look).deg).toBeCloseTo(-6);
+    expect(sampleClip(turned, 300, look).deg).toBeCloseTo(0);
+    expect(assMotion(turned, look)).toContain("\\frz-6\\t(0,300,\\frz0)");
+    const tinted: MotionClip = { ...clip, preset: "tint" };
+    expect(sampleClip(tinted, 0, look).tint).toBe(0);
+    expect(sampleClip(tinted, 800, look).tint).toBeCloseTo(1);
+    expect(sampleClip(tinted, 1000, look).y).toBeCloseTo(0.8);
+  });
+
+  it("預設唔改位置，淡入可以一齊留低，跟字體清走", () => {
+    const next = setLinePreset([], "a", "甲", 0, 1000, "fly");
+    expect(next[0].preset).toBe("fly");
+    expect(next[0].trans).toEqual({ x: 0, y: 0 });
+    const faded = setLineFade(next, "a", "甲", 0, 1000, "in", 1);
+    expect(faded[0].preset).toBe("fly");
+    expect(faded[0].enter.opacity).toBe(0);
+    const placed = placeLineClip(faded, "a", "甲", 0, 1000, 0.2, 0.8, look);
+    expect(placed[0].preset).toBe("fly");
+    expect(sampleClip(placed[0], 1000, look).x).toBeCloseTo(0.2);
+    const none = setLinePreset(placed, "a", "甲", 0, 1000, null);
+    expect(none[0].preset).toBeUndefined();
+    expect(none[0].enter.opacity).toBe(0);
+    expect(assMotion(none[0], look)).toContain("\\fade");
+    expect(assMotion(none[0], look)).not.toContain("\\move");
+    expect(clearLineMotion(placed, "a")).toEqual([]);
+    const all = setLinesPreset(
+      [],
+      [
+        { lineKey: "a", text: "甲", startMs: 0, endMs: 1000 },
+        { lineKey: "b", text: "乙", startMs: 1000, endMs: 2000 },
+      ],
+      "scale",
+    );
+    expect(all.every((item) => item.preset === "scale")).toBe(true);
+    expect(setLinesPreset(all, [
+      { lineKey: "a", text: "甲", startMs: 0, endMs: 1000 },
+      { lineKey: "b", text: "乙", startMs: 1000, endMs: 2000 },
+    ], null).every((item) => item.preset == null)).toBe(true);
+  });
+
+  it("舊檔冇預設，重開之後仍然停住", () => {
+    const raw = exampleProject();
+    const parsed = parseProject({
+      ...raw,
+      motion: [
+        {
+          id: "a",
+          text: "甲",
+          startMs: 0,
+          endMs: 1000,
+          lineKey: "a",
+          enter: { x: 0.2, y: 0.7, opacity: 1 },
+          leave: { x: 0.2, y: 0.7, opacity: 1 },
+          preset: "spark",
+        },
+      ],
+    });
+    expect(parsed.motion[0].preset).toBeUndefined();
+    expect(assMotion(parsed.motion[0], raw.style)).toContain("\\pos(");
+    expect(assMotion(parsed.motion[0], raw.style)).not.toContain("\\move");
+    const kept = parseProject({
+      ...raw,
+      motion: [{ ...parsed.motion[0], preset: "turn" }],
+    });
+    expect(kept.motion[0].preset).toBe("turn");
+    expect(parseProject({ ...raw, motion: kept.motion }).motion[0].preset).toBe("turn");
   });
 
   it("撳在字幕或譯文上面才算自由拖", () => {

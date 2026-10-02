@@ -7,7 +7,7 @@ import {
   type LyricLine,
 } from "./lyrics";
 import { assColor, assFontSize, defaultLook, isVerticalFlow, lyricFont, type LyricLook } from "./lyricLook";
-import { assFadeTag, assMotion, transOffset, type MotionClip } from "./motion";
+import { assFadeTag, assMotion, assPoseTags, assTransMotion, tintMs, transOffset, type MotionClip } from "./motion";
 import { mediaMsForLyric } from "./preview";
 import { defaultTiming, type TrackTiming } from "./timing";
 
@@ -36,13 +36,17 @@ export function buildKaraokeAss(
     if (isVerticalFlow(look.flow)) {
       events.push(...verticalEvents(line, start, end, look, clip, pieces));
     } else {
-      const lead = clip ? assMotion(clip, look, start, end) : place(look);
+      const wordTimed = pieces.some((piece) => piece.cs != null);
+      const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
+      const lead = clip ? assMotion(clip, look, start, end, tint) : place(look);
       events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look)}`));
       const trans = line.translatedText?.trim();
       if (trans) {
         const at = transAnchorPx(look, clip);
-        const fade = clip ? assFadeTag(clip, start, end) : "";
-        events.push(dialogue("Trans", start, end, `${posTag(at.x, at.y, fade)}${escapeAss(trans)}`));
+        const body = clip
+          ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "")
+          : posTag(at.x, at.y, "");
+        events.push(dialogue("Trans", start, end, `${body}${escapeAss(trans)}`));
       }
     }
   }
@@ -109,13 +113,14 @@ function verticalEvents(
   const anchor = anchorPx(look, clip);
   const transAt = transAnchorPx(look, clip);
   const fade = clip ? assFadeTag(clip, start, end) : "";
+  const span = end - start;
   const glyphs = stackGlyphs(pieces);
   const events = glyphs.map((glyph, index) =>
     dialogue(
       "Orig",
       start,
       end,
-      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, look.size, index), look.size, look, fade, glyph.switchMs, look.color)}${escapeAss(glyph.ch)}`,
+      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, look.size, index), look.size, look, fade, glyph.switchMs, look.color, clip, span)}${escapeAss(glyph.ch)}`,
     ),
   );
   const trans = line.translatedText?.trim();
@@ -128,7 +133,7 @@ function verticalEvents(
           "Trans",
           start,
           end,
-          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), step, look, fade, null, look.transColor)}${escapeAss(ch)}`,
+          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), step, look, fade, null, look.transColor, clip, span)}${escapeAss(ch)}`,
         ),
       );
     });
@@ -178,10 +183,18 @@ function glyphOverride(
   fade: string,
   switchMs: number | null,
   fill: string,
+  clip: MotionClip | undefined,
+  spanMs: number,
 ): string {
+  const pose = assPoseTags(clip?.preset, Math.round(x), Math.round(y), spanMs);
   const sung = switchMs == null ? "" : `\\t(${Math.round(switchMs)},${Math.round(switchMs)},\\1c${assColor(look.sungColor)})`;
+  const color = clip?.preset === "tint" && switchMs == null ? tintOverride(fill, look.sungColor, spanMs) : `\\1c${assColor(fill)}`;
   const size = assFontSize(nominal, look.font);
-  return `{\\an5\\pos(${Math.round(x)},${Math.round(y)})\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}\\1c${assColor(fill)}${fade}${sung}}`;
+  return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}${color}${fade}${sung}}`;
+}
+
+function tintOverride(from: string, to: string, spanMs: number): string {
+  return `\\1c${assColor(from)}\\t(0,${tintMs(spanMs)},\\1c${assColor(to)})`;
 }
 
 function dialogue(style: string, startMs: number, endMs: number, text: string): string {

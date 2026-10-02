@@ -6,7 +6,10 @@ import {
   clearLineMotions,
   mediaSpans,
   setLineFade,
+  setLinePreset,
   setLinesFade,
+  setLinesPreset,
+  type LinePreset,
   type MotionClip,
 } from "../../core/motion";
 import type { TrackTiming } from "../../core/timing";
@@ -59,6 +62,7 @@ export function ShapePanel({
   const lineClip = selected ? clips.find((clip) => clip.lineKey === lineKey(selected)) : undefined;
   const fadeIn = allOn ? sharedFade(clips, targets, "in") : lineClip ? 1 - lineClip.enter.opacity : 0;
   const fadeOut = allOn ? sharedFade(clips, targets, "out") : lineClip ? 1 - lineClip.leave.opacity : 0;
+  const preset = allOn ? sharedPreset(clips, targets) : (lineClip?.preset ?? null);
   const canPlace = allOn ? targets.length > 0 : selected != null && span != null;
   const canClear = allOn ? targets.some((line) => clips.some((clip) => clip.lineKey === line.lineKey)) : lineClip != null;
 
@@ -69,6 +73,15 @@ export function ShapePanel({
     }
     if (!selected || !span) return;
     onClips(setLineFade(clips, lineKey(selected), selected.text, span.startMs, span.endMs, edge, amount));
+  }
+
+  function choosePreset(next: LinePreset | null) {
+    if (allOn) {
+      onClips(setLinesPreset(clips, targets, next));
+      return;
+    }
+    if (!selected || !span) return;
+    onClips(setLinePreset(clips, lineKey(selected), selected.text, span.startMs, span.endMs, next));
   }
 
   function followLook() {
@@ -85,7 +98,7 @@ export function ShapePanel({
         <LyricLookPanel look={look} onChange={onLook} />
       </Fold>
       <Fold title="效果" initial>
-        <p className="meta span">揀一句再改淡入淡出，或者撳全選一齊改。位置用上面的字體，或者喺預覽拖。這裡不改時間。</p>
+        <p className="meta span">揀一句再改淡入淡出同預設，或者撳全選一齊改。位置用上面的字體，或者喺預覽拖。這裡不改時間。</p>
         <div className="span">
           <LineList
             lines={shown}
@@ -113,6 +126,32 @@ export function ShapePanel({
               ? selected.text
               : "尚未選句。還沒單獨擺過的句子，停在成首位置。"}
         </p>
+        <div className="presets span">
+          {(
+            [
+              [null, "無"],
+              ["fly", "飛入"],
+              ["scale", "放大"],
+              ["turn", "擺正"],
+              ["tint", "變色"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={label}
+              type="button"
+              className={preset === id ? "tiny on" : "tiny"}
+              disabled={!canPlace}
+              onClick={() => choosePreset(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="meta span">
+          {preset === "mixed"
+            ? "呢幾句預設唔同。再揀一個就全部用同一個。"
+            : "飛入由下移上。放大、擺正同變色都喺句頭。預設會燒進入面。"}
+        </p>
         <div className="row span">
           <Range label="淡入" min={0} max={1} value={fadeIn} disabled={!canPlace} onChange={(amount) => fadeLine("in", amount)} />
           <Range label="淡出" min={0} max={1} value={fadeOut} disabled={!canPlace} onChange={(amount) => fadeLine("out", amount)} />
@@ -120,16 +159,23 @@ export function ShapePanel({
             type="button"
             className="tiny"
             disabled={!canClear}
-            title={allOn ? "所有句子的原文同譯文回到成首位置，淡入和淡出一併清掉" : "呢句原文同譯文回到成首位置，淡入和淡出一併清掉"}
+            title={allOn ? "所有句子的原文同譯文回到成首位置，預設同淡入淡出一併清掉" : "呢句原文同譯文回到成首位置，預設同淡入淡出一併清掉"}
             onClick={followLook}
           >
             跟字體
           </button>
         </div>
-        <p className="meta span">淡入、淡出拉高就更淡。</p>
+        <p className="meta span">淡入、淡出拉高就更淡。預設唔改位置。</p>
       </Fold>
     </div>
   );
+}
+
+function sharedPreset(clips: MotionClip[], lines: { lineKey: string }[]): LinePreset | null | "mixed" {
+  if (lines.length === 0) return null;
+  const values = lines.map((line) => clips.find((item) => item.lineKey === line.lineKey)?.preset ?? null);
+  const first = values[0];
+  return values.every((value) => value === first) ? first : "mixed";
 }
 
 function sharedFade(

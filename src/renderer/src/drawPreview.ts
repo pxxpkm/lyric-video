@@ -1,7 +1,7 @@
 import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/preview";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
 import { canvasFont, defaultLook, isVerticalFlow, type LyricLook } from "../../core/lyricLook";
-import { lyricBands, mediaSpans, pointOnBands, sampleClip, sampleTrans, verticalColumns, type MotionClip } from "../../core/motion";
+import { lyricBands, mediaSpans, pointOnBands, sampleClip, sampleTrans, verticalColumns, type MotionClip, type Placed } from "../../core/motion";
 import { defaultTiming, type TrackTiming } from "../../core/timing";
 import type { PreviewLine } from "../../shared/preview";
 
@@ -31,7 +31,9 @@ export function hitsCurrentLyric(
   const shown = applyEdits(lines, timing);
   const frame = previewFrame(shown, lyricMs, timing);
   ctx.save();
-  const bands = measureBands(ctx, shown, frame, mediaMs, timing, look, clips, width, height);
+  // 飛入只郁畫面。拖曳抓句尾嘅定位，唔跟住飛緊嘅字。
+  const restMs = mediaSpans(shown, timing).get(frame.key)?.endMs ?? mediaMs;
+  const bands = measureBands(ctx, shown, frame, restMs, timing, look, clips, width, height);
   ctx.restore();
   if (!bands) return null;
   if (pointOnBands(point, [bands.main])) return "orig";
@@ -75,7 +77,7 @@ export function drawPreview(
   const transPx = look.transSize * scale;
   const edge = Math.max(look.outline * scale, look.outline > 0 ? 1 : 0);
   const placed = linePlacement(clips, frame.key, mediaMs, look, shown, timing);
-  const translated = transPlacement(clips, frame.key, look);
+  const translated = transPlacement(clips, frame.key, mediaMs, look, shown, timing);
   const x = placed.x * width;
   const y = placed.y * height;
   const transX = translated.x * width;
@@ -86,12 +88,13 @@ export function drawPreview(
     ctx.font = canvasFont(look, Math.max(16, fontPx * 0.7));
     paint(ctx, "尚未有歌詞", x, y, look.color, look.outlineColor, edge);
   } else if (isVerticalFlow(look.flow)) {
-    const glyphs = mainGlyphs(shown[frame.index]?.words ?? null, frame, look);
+    const words = shown[frame.index]?.words ?? null;
+    const glyphs = mainGlyphs(words, frame, look);
     const bands = verticalColumns(x, y, transX, transY, fontPx, transRatio(look), {
       main: glyphs.length,
       trans: Array.from(frame.trans).length,
     });
-    drawColumn(ctx, glyphs, bands.main, look, fontPx, edge);
+    drawColumn(ctx, glyphs, bands.main, look, fontPx, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint);
     if (frame.trans && bands.trans) {
       drawColumn(
         ctx,
@@ -100,15 +103,24 @@ export function drawPreview(
         look,
         transPx,
         edge,
+        translated,
+        translated.tint,
       );
     }
   } else {
     const line = shown[frame.index];
+    const words = line?.words ?? null;
     const bands = measureBands(ctx, shown, frame, mediaMs, timing, look, clips, width, height);
-    drawCurrent(ctx, line?.words ?? null, frame, x, y, look, fontPx, edge);
+    withPose(ctx, x, y, placed, () => {
+      if (hasKaraoke(words, frame)) drawCurrent(ctx, words, frame, x, y, look, fontPx, edge);
+      else paint(ctx, frame.text, x, y, mixHex(look.color, look.sungColor, placed.tint), look.outlineColor, edge);
+    });
     if (frame.trans && bands?.trans) {
-      ctx.font = canvasFont(look, transPx);
-      paint(ctx, frame.trans, bands.trans.x, bands.trans.y, look.transColor, look.outlineColor, edge);
+      const at = bands.trans;
+      withPose(ctx, at.x, at.y, translated, () => {
+        ctx.font = canvasFont(look, transPx);
+        paint(ctx, frame.trans, at.x, at.y, mixHex(look.transColor, look.sungColor, translated.tint), look.outlineColor, edge);
+      });
     }
   }
   ctx.restore();
@@ -122,17 +134,25 @@ function linePlacement(
   look: LyricLook,
   shown: LyricLine[],
   timing: TrackTiming,
-): { x: number; y: number; opacity: number } {
+): Placed {
   const bound = clips.find((clip) => clip.lineKey && clip.lineKey === key);
   const span = bound ? mediaSpans(shown, timing).get(key) : undefined;
-  if (!bound) return { x: look.x, y: look.y, opacity: 1 };
+  if (!bound) return { x: look.x, y: look.y, opacity: 1, scale: 1, deg: 0, tint: 0 };
   return sampleClip(bound, mediaMs, look, span?.startMs ?? bound.startMs, span?.endMs ?? bound.endMs);
 }
 
-function transPlacement(clips: MotionClip[], key: string, look: LyricLook): { x: number; y: number } {
+function transPlacement(
+  clips: MotionClip[],
+  key: string,
+  mediaMs: number,
+  look: LyricLook,
+  shown: LyricLine[],
+  timing: TrackTiming,
+): { x: number; y: number; scale: number; deg: number; tint: number } {
   const bound = clips.find((clip) => clip.lineKey && clip.lineKey === key);
-  if (!bound) return { x: look.transX, y: look.transY };
-  return sampleTrans(bound, look);
+  if (!bound) return { x: look.transX, y: look.transY, scale: 1, deg: 0, tint: 0 };
+  const span = mediaSpans(shown, timing).get(key);
+  return sampleTrans(bound, look, mediaMs, span?.startMs ?? bound.startMs, span?.endMs ?? bound.endMs);
 }
 
 function measureBands(
@@ -151,7 +171,7 @@ function measureBands(
   const fontPx = look.size * scale;
   const transPx = look.transSize * scale;
   const placed = linePlacement(clips, frame.key, mediaMs, look, shown, timing);
-  const translated = transPlacement(clips, frame.key, look);
+  const translated = transPlacement(clips, frame.key, mediaMs, look, shown, timing);
   if (isVerticalFlow(look.flow)) {
     return verticalColumns(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), {
       main: mainGlyphs(shown[frame.index]?.words ?? null, frame, look).length,
@@ -189,6 +209,10 @@ function mainGlyphs(
   );
 }
 
+function hasKaraoke(words: { text: string }[] | null, frame: PreviewFrame): boolean {
+  return Boolean(words && words.length > 0 && frame.wordIndex >= 0);
+}
+
 function drawColumn(
   ctx: CanvasRenderingContext2D,
   glyphs: { ch: string; fill: string }[],
@@ -196,6 +220,8 @@ function drawColumn(
   look: LyricLook,
   fontPx: number,
   edge: number,
+  pose: { scale: number; deg: number } = { scale: 1, deg: 0 },
+  tint = 0,
   outline = look.outlineColor,
 ): void {
   if (glyphs.length === 0) return;
@@ -204,9 +230,34 @@ function drawColumn(
   ctx.font = canvasFont(look, fontPx);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+  // 直排每隻字係獨立事件。放大同擺正繞自己的中心，先至同匯出一樣，字距亦唔會被成條柱拉散。
   glyphs.forEach((glyph, index) => {
-    paint(ctx, glyph.ch, band.x, top + index * step, glyph.fill, outline, edge);
+    const gx = band.x;
+    const gy = top + index * step;
+    const fill = tint > 0 ? mixHex(glyph.fill, look.sungColor, tint) : glyph.fill;
+    withPose(ctx, gx, gy, pose, () => paint(ctx, glyph.ch, gx, gy, fill, outline, edge));
   });
+}
+
+function withPose(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  pose: { scale: number; deg: number },
+  draw: () => void,
+): void {
+  if (pose.scale === 1 && pose.deg === 0) {
+    draw();
+    return;
+  }
+  ctx.save();
+  ctx.translate(x, y);
+  // \frz 正數係逆時針。Canvas 正數係順時針，反號先至同成片同一邊。
+  if (pose.deg) ctx.rotate((-pose.deg * Math.PI) / 180);
+  if (pose.scale !== 1) ctx.scale(pose.scale, pose.scale);
+  ctx.translate(-x, -y);
+  draw();
+  ctx.restore();
 }
 
 function textWidth(ctx: CanvasRenderingContext2D, words: { text: string }[] | null, frame: PreviewFrame): number {
@@ -259,6 +310,20 @@ function paint(
   }
   ctx.fillStyle = fill;
   ctx.fillText(text, x, y);
+}
+
+function mixHex(from: string, to: string, t: number): string {
+  if (t <= 0) return from;
+  const a = hexRgb(from);
+  const b = hexRgb(to);
+  const u = Math.min(1, t);
+  const ch = (index: number) => Math.round(a[index] + (b[index] - a[index]) * u).toString(16).padStart(2, "0");
+  return `#${ch(0)}${ch(1)}${ch(2)}`;
+}
+
+function hexRgb(hexColor: string): [number, number, number] {
+  const hex = hexColor.replace("#", "").slice(0, 6).padEnd(6, "0");
+  return [Number.parseInt(hex.slice(0, 2), 16) || 0, Number.parseInt(hex.slice(2, 4), 16) || 0, Number.parseInt(hex.slice(4, 6), 16) || 0];
 }
 
 function withAlpha(hexColor: string, alpha: number): string {

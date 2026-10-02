@@ -538,6 +538,16 @@ button.tiny.on {
   color: #f3f5f8;
 }
 
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.presets button {
+  flex: 0 0 auto;
+}
+
 .icon {
   width: 34px;
   height: 34px;
