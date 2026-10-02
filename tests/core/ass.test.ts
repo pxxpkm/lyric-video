@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildKaraokeAss, karaokeCentiseconds } from "../../src/core/ass";
 import { lyricLine } from "../../src/core/lyrics";
 import { assColor, assFontSize, defaultLook } from "../../src/core/lyricLook";
-import { setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
+import { decorDots, decorFadeTag, decorLayout, decorMoveWindow, setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
 import { exampleProject, parseProject } from "../../src/core/project";
 import { defaultTiming } from "../../src/core/timing";
@@ -170,6 +170,121 @@ describe("karaoke.ass", () => {
     expect(ass).toContain("\\fade");
     expect(ass).toContain("\\pos(");
     expect(ass).not.toContain("\\move");
+  });
+
+  it("微塵沿成句，小點細而且錯開，歌詞仍然停住", () => {
+    const clip = presetClip("1000|第一句", "第一句", 1000, 3000, "dust");
+    const ass = buildKaraokeAss(testClipLines(), undefined, defaultLook, [clip]);
+    const lyric = ass.split("\n").find((row) => row.includes("第一句"));
+    expect(lyric).toContain("\\pos(");
+    expect(lyric).not.toContain("\\move");
+    expect(lyric).not.toContain("●");
+    const dots = ass.split("\n").filter((row) => row.includes("●"));
+    const placed = decorDots("dust", 2000, decorLayout("第一句", defaultLook.size, false));
+    const move = decorMoveWindow(placed[0], 2000);
+    expect(dots).toHaveLength(placed.length);
+    expect(dots[0]).toContain(`\\move(${960 + placed[0].x},${886 + placed[0].y},${960 + placed[0].x2},${886 + placed[0].y2},${move.t1},${move.t2})`);
+    expect(placed[0].x).toBe(-96);
+    expect(placed[placed.length - 1].x).toBe(96);
+    expect(placed[0].size).toBeLessThanOrEqual(14);
+    expect(dots[0]).toContain(`\\fs${assFontSize(placed[0].size, "chiron")}`);
+    expect(dots[0]).toContain("\\bord0");
+    expect(dots[0]).toContain(decorFadeTag(placed[0], 2000));
+    expect(decorFadeTag(placed[0], 2000).startsWith("\\fade(255,")).toBe(true);
+    expect(placed.some((dot) => dot.delayMs > 0)).toBe(true);
+    expect(dots.every((row) => !row.includes("\\k"))).toBe(true);
+    const vertical = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40 }, [clip]);
+    const upright = decorDots("dust", 2000, decorLayout("第一句", 40, true));
+    expect(vertical).toContain("\\pos(960,846)");
+    expect(vertical).toContain("\\pos(960,886)");
+    expect(vertical).toContain("\\pos(960,926)");
+    expect(vertical.split("\n").filter((row) => row.includes("●"))).toHaveLength(upright.length);
+    const both = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, transColor: "#ABCDEF" }, [
+      presetClip("3000|第二句", "第二句", 3000, 6000, "dust"),
+    ]);
+    const paired = both.split("\n").filter((row) => row.includes("●"));
+    const orig = decorDots("dust", 3000, decorLayout("第二句", defaultLook.size, false));
+    const trans = decorDots("dust", 3000, decorLayout("第二句譯文", defaultLook.transSize, false));
+    expect(paired).toHaveLength(orig.length + trans.length);
+    expect(paired.some((row) => row.includes(assColor("#ABCDEF")))).toBe(true);
+  });
+
+  it("光斑同弧線都係細點，終點跟表", () => {
+    const glow = buildKaraokeAss(testClipLines(), undefined, defaultLook, [
+      presetClip("1000|第一句", "第一句", 1000, 3000, "glow"),
+    ]);
+    const glowDots = glow.split("\n").filter((row) => row.includes("●"));
+    const glowPlaced = decorDots("glow", 2000, decorLayout("第一句", defaultLook.size, false));
+    const glowMove = decorMoveWindow(glowPlaced[0], 2000);
+    expect(glowDots).toHaveLength(glowPlaced.length);
+    expect(glowDots[0]).toContain(
+      `\\move(${960 + glowPlaced[0].x},${886 + glowPlaced[0].y},${960 + glowPlaced[0].x2},${886 + glowPlaced[0].y2},${glowMove.t1},${glowMove.t2})`,
+    );
+    expect(glowPlaced[0].x).toBe(-96);
+    expect(glowPlaced[glowPlaced.length - 1].x).toBe(96);
+    expect(glowPlaced[0].size).toBeLessThanOrEqual(26);
+    expect(glowDots[0]).toContain(`\\fs${assFontSize(glowPlaced[0].size, "chiron")}`);
+    expect(glowDots[0]).toContain(decorFadeTag(glowPlaced[0], 2000));
+    expect(glow).not.toContain("\\blur");
+    const arc = buildKaraokeAss(testClipLines(), undefined, defaultLook, [
+      presetClip("1000|第一句", "第一句", 1000, 3000, "arc"),
+    ]);
+    const arcDots = arc.split("\n").filter((row) => row.includes("●"));
+    const arcPlaced = decorDots("arc", 2000, decorLayout("第一句", defaultLook.size, false));
+    const firstMove = decorMoveWindow(arcPlaced[0], 2000);
+    const last = arcPlaced[arcPlaced.length - 1];
+    const lastMove = decorMoveWindow(last, 2000);
+    expect(arcDots).toHaveLength(arcPlaced.length);
+    expect(arcDots[0]).toContain(
+      `\\move(${960 + arcPlaced[0].x},${886 + arcPlaced[0].y},${960 + arcPlaced[0].x2},${886 + arcPlaced[0].y2},${firstMove.t1},${firstMove.t2})`,
+    );
+    expect(arcDots[arcDots.length - 1]).toContain(
+      `\\move(${960 + last.x},${886 + last.y},${960 + last.x2},${886 + last.y2},${lastMove.t1},${lastMove.t2})`,
+    );
+    expect(arcPlaced[0].x).toBe(-96);
+    expect(last.x2).toBe(96);
+    const lyric = arc.split("\n").find((row) => row.includes("第一句"));
+    expect(lyric).toContain("\\pos(");
+    expect(lyric).not.toContain("\\move");
+  });
+
+  it("有逐字嘅原文加微塵仍然保留 \\k，小點冇 \\k", () => {
+    const line = lyricLine(1_000, "甲乙", {
+      translatedText: "丙",
+      words: [
+        { startMs: 0, durMs: 500, text: "甲" },
+        { startMs: 500, durMs: 500, text: "乙" },
+      ],
+    });
+    const ass = buildKaraokeAss([line], undefined, defaultLook, [presetClip("1000|甲乙", "甲乙", 1000, 15_500, "dust")]);
+    const orig = ass.split("\n").find((row) => row.includes("\\k"));
+    expect(orig).toBeTruthy();
+    expect(orig).not.toContain("●");
+    const dots = ass.split("\n").filter((row) => row.includes("●"));
+    expect(dots.length).toBeGreaterThan(0);
+    expect(dots.every((row) => !row.includes("\\k"))).toBe(true);
+  });
+
+  it("舊檔重開冇小點", () => {
+    expect(buildKaraokeAss(testClipLines())).not.toContain("●");
+    const raw = exampleProject();
+    const parsed = parseProject({
+      ...raw,
+      motion: [
+        {
+          id: "a",
+          text: "第一句",
+          startMs: 1000,
+          endMs: 3000,
+          lineKey: "1000|第一句",
+          enter: { x: raw.style.x, y: raw.style.y, opacity: 1 },
+          leave: { x: raw.style.x, y: raw.style.y, opacity: 1 },
+          preset: "dust",
+        },
+      ],
+    });
+    expect(parsed.motion[0]?.preset).toBe("dust");
+    expect(buildKaraokeAss(testClipLines(), undefined, defaultLook, parsed.motion)).toContain("●");
   });
 
   it("正的延遲讓字幕晚出現", () => {

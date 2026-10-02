@@ -1,7 +1,20 @@
 import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/preview";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
 import { canvasFont, defaultLook, isVerticalFlow, type LyricLook } from "../../core/lyricLook";
-import { lyricBands, mediaSpans, pointOnBands, sampleClip, sampleTrans, verticalColumns, type MotionClip, type Placed } from "../../core/motion";
+import {
+  isDecor,
+  lyricBands,
+  mediaSpans,
+  pointOnBands,
+  sampleClip,
+  decorLayout,
+  sampleDecor,
+  sampleTrans,
+  verticalColumns,
+  DECOR_MARK,
+  type MotionClip,
+  type Placed,
+} from "../../core/motion";
 import { defaultTiming, type TrackTiming } from "../../core/timing";
 import type { PreviewLine } from "../../shared/preview";
 
@@ -124,6 +137,27 @@ export function drawPreview(
     }
   }
   ctx.restore();
+  const span = mediaSpans(shown, timing).get(frame.key);
+  const preset = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset;
+  if (frame.text && span && isDecor(preset)) {
+    const vertical = isVerticalFlow(look.flow);
+    drawDecor(ctx, x, y, preset, mediaMs, span.startMs, span.endMs, scale, look.color, look, decorLayout(frame.text, look.size, vertical));
+    if (frame.trans) {
+      drawDecor(
+        ctx,
+        transX,
+        transY,
+        preset,
+        mediaMs,
+        span.startMs,
+        span.endMs,
+        scale,
+        look.transColor,
+        look,
+        decorLayout(frame.trans, look.transSize, vertical),
+      );
+    }
+  }
   return frame;
 }
 
@@ -290,6 +324,30 @@ function drawCurrent(
     x += widths[index];
   });
   ctx.textAlign = "center";
+}
+
+function drawDecor(
+  ctx: CanvasRenderingContext2D,
+  anchorX: number,
+  anchorY: number,
+  preset: "dust" | "glow" | "arc",
+  mediaMs: number,
+  startMs: number,
+  endMs: number,
+  scale: number,
+  fill: string,
+  look: LyricLook,
+  layout: { axis: "x" | "y"; extent: number; size: number },
+): void {
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const dot of sampleDecor(preset, mediaMs, startMs, endMs, layout)) {
+    ctx.globalAlpha = dot.opacity;
+    ctx.font = canvasFont(look, dot.size * scale);
+    paint(ctx, DECOR_MARK, anchorX + dot.x * scale, anchorY + dot.y * scale, fill, fill, 0);
+  }
+  ctx.restore();
 }
 
 function paint(

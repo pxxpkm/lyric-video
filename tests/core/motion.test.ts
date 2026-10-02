@@ -16,7 +16,11 @@ import {
   tintMs,
   verticalColumns,
   pointOnBands,
+  decorDots,
+  decorMoveWindow,
+  decorLayout,
   sampleClip,
+  sampleDecor,
   setLineFade,
   setLinesFade,
   FLY_PX,
@@ -301,6 +305,55 @@ describe("片段運動", () => {
     });
     expect(kept.motion[0].preset).toBe("turn");
     expect(parseProject({ ...raw, motion: kept.motion }).motion[0].preset).toBe("turn");
+  });
+
+  it("裝飾沿住成句鋪開，唔會只堆喺中間", () => {
+    const wide = decorLayout("一二三四五六七八九十", 64, false);
+    expect(wide.extent).toBe(640);
+    const dust = decorDots("dust", 2000, wide);
+    const short = decorDots("dust", 2000, decorLayout("第一句", 64, false));
+    expect(dust.length).toBeGreaterThan(short.length);
+    expect(dust.length).toBeLessThanOrEqual(20);
+    expect(dust[0]?.x).toBe(-320);
+    expect(dust[dust.length - 1]?.x).toBe(320);
+    expect(dust.every((dot) => dot.y < 0 && dot.y2 < dot.y && dot.y - dot.y2 < 40)).toBe(true);
+    expect(dust.every((dot) => dot.size <= 14 && dot.opacity0 < 0.8 && dot.opacity1 === 0)).toBe(true);
+    expect(new Set(dust.map((dot) => dot.size)).size).toBeGreaterThan(1);
+    expect(new Set(dust.map((dot) => dot.delayMs)).size).toBeGreaterThan(1);
+    expect(decorDots("dust", 400, wide).every((dot) => dot.delayMs + dot.moveMs <= 400)).toBe(true);
+    const glow = decorDots("glow", 2000, wide);
+    expect(glow[0]?.x).toBe(-320);
+    expect(glow[glow.length - 1]?.x).toBe(320);
+    expect(glow.length).toBeLessThan(dust.length);
+    expect(new Set(glow.map((dot) => Math.sign(dot.y))).size).toBe(2);
+    expect(glow.every((dot) => dot.size <= 26 && dot.opacity0 < 0.5 && dot.opacity1 > 0 && dot.opacity1 < dot.opacity0)).toBe(true);
+    const arc = decorDots("arc", 500, wide);
+    expect(arc.length).toBeGreaterThan(5);
+    expect(arc[0]?.x).toBe(-320);
+    expect(arc[arc.length - 1]?.x2).toBe(320);
+    expect(arc.every((dot) => dot.size <= 12)).toBe(true);
+    const mid = arc[Math.floor(arc.length / 2)];
+    expect(mid?.y).toBeGreaterThan(arc[0]?.y ?? 0);
+    expect((mid?.y ?? 0) - (arc[0]?.y ?? 0)).toBeLessThan(wide.size);
+    const upright = decorDots("dust", 2000, decorLayout("第一句", 40, true));
+    expect(upright[0]?.y).toBe(-60);
+    expect(upright[upright.length - 1]?.y).toBe(60);
+    expect(new Set(upright.map((dot) => Math.sign(dot.x))).size).toBe(2);
+    expect(decorDots("fly", 2000, wide)).toEqual([]);
+    const dusted: MotionClip = { ...clip, preset: "dust" };
+    expect(sampleClip(dusted, 500, look).y).toBeCloseTo(0.8);
+    expect(sampleClip(dusted, 500, look).tint).toBe(0);
+    expect(assMotion(dusted, look)).toContain("\\pos(");
+    expect(assMotion(dusted, look)).not.toContain("\\move");
+    const home = decorLayout("甲", 64, false);
+    const first = decorDots("dust", 2000, home)[0];
+    const risenAt = first ? decorMoveWindow(first, 2000).t2 : 0;
+    expect(sampleDecor("dust", 0, 0, 2000, home)[0]?.opacity).toBe(0);
+    expect(sampleDecor("dust", risenAt, 0, 2000, home)[0]?.y).toBeCloseTo(first?.y2 ?? 0);
+    expect(sampleDecor("dust", risenAt, 0, 2000, home)[0]?.opacity).toBeCloseTo(first?.opacity0 ?? 0);
+    expect(sampleDecor("dust", 2000, 0, 2000, home)[0]?.opacity).toBe(0);
+    const replaced = setLinePreset([{ ...dusted, lineKey: "a" }], "a", "甲", 0, 1000, "fly");
+    expect(replaced[0]?.preset).toBe("fly");
   });
 
   it("撳在字幕或譯文上面才算自由拖", () => {

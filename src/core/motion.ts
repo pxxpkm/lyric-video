@@ -5,7 +5,17 @@ import type { TrackTiming } from "./timing";
 export type MotionFrame = { x: number; y: number; opacity: number };
 
 /** 一句一個。冇有就停住。存檔只存呢個名，取樣時先展開。 */
-export type LinePreset = "fly" | "scale" | "turn" | "tint";
+export const linePresetNames = ["fly", "scale", "turn", "tint", "dust", "glow", "arc"] as const;
+export type LinePreset = (typeof linePresetNames)[number];
+export type DecorPreset = "dust" | "glow" | "arc";
+
+export function knownPreset(value: unknown): LinePreset | undefined {
+  return linePresetNames.find((item) => item === value);
+}
+
+export function isDecor(preset: LinePreset | undefined): preset is DecorPreset {
+  return preset === "dust" || preset === "glow" || preset === "arc";
+}
 
 /** x、y 係相對成首位置的偏移。畫面位置 = 成首 + 偏移。basis 為 "look" 先當偏移；舊檔沒有 basis 時，x、y 仍是畫面絕對位置。 */
 export type MotionClip = {
@@ -126,9 +136,12 @@ export function samplePose(preset: LinePreset | undefined, mediaMs: number, star
     const t = dur <= 0 ? 1 : Math.min(1, elapsed / dur);
     return { ...rest, deg: -6 * (1 - t) };
   }
-  const dur = tintMs(span);
-  const t = dur <= 0 ? 1 : Math.min(1, elapsed / dur);
-  return { ...rest, tint: t };
+  if (preset === "tint") {
+    const dur = tintMs(span);
+    const t = dur <= 0 ? 1 : Math.min(1, elapsed / dur);
+    return { ...rest, tint: t };
+  }
+  return rest;
 }
 
 export function sampleClip(
@@ -200,6 +213,166 @@ export function assTransMotion(
 
 function wrapAnchor(clip: MotionClip, x: number, y: number, startMs: number, endMs: number, extra: string): string {
   return `{\\an5${assPoseTags(clip.preset, x, y, endMs - startMs)}${extra}${assFadeTag(clip, startMs, endMs)}}`;
+}
+
+/** 裝飾小點。座標係 1080 畫面相對定位的像素。歌詞本身唔用呢組點。 */
+export const DECOR_MARK = "●";
+
+export type DecorDot = {
+  x: number;
+  y: number;
+  x2: number;
+  y2: number;
+  size: number;
+  opacity0: number;
+  opacity1: number;
+  delayMs: number;
+  attackMs: number;
+  moveMs: number;
+};
+
+/** 橫排沿字寬鋪，直排沿字柱高鋪。預覽同匯出都用字數乘字級，唔用畫面量度。 */
+export type DecorLayout = { axis: "x" | "y"; extent: number; size: number };
+
+export function decorLayout(text: string, size: number, vertical: boolean): DecorLayout {
+  const count = Math.max(1, Array.from(text).length);
+  const nominal = Number.isFinite(size) && size > 0 ? size : 64;
+  return { axis: vertical ? "y" : "x", extent: count * nominal, size: nominal };
+}
+
+function lineSlots(count: number, extent: number): number[] {
+  if (count <= 1) return [0];
+  const half = extent / 2;
+  return Array.from({ length: count }, (_, index) => Math.round(-half + (extent * index) / (count - 1)));
+}
+
+function onAxis(axis: "x" | "y", along: number, cross: number): { x: number; y: number } {
+  return axis === "x" ? { x: along, y: cross } : { x: cross, y: along };
+}
+
+const DUST_WOBBLE = [0, 0.18, 0.06, 0.24, 0.1, 0.2];
+
+function speckCount(extent: number, size: number, every: number, floor: number, cap: number): number {
+  return Math.min(cap, Math.max(floor, Math.round(extent / Math.max(1, size * every))));
+}
+
+function speckSize(preset: DecorPreset, index: number): number {
+  if (preset === "glow") return index % 2 === 0 ? 20 : 26;
+  if (preset === "arc") return 10;
+  return index % 3 === 1 ? 14 : 10;
+}
+
+/** 錯開寫死。每次播放同一組點，預覽同匯出先至對得上。 */
+function dotClock(index: number, span: number, travel: number): { delayMs: number; attackMs: number; moveMs: number } {
+  const spanR = Math.max(0, Math.round(span));
+  if (spanR <= 0) return { delayMs: 0, attackMs: 0, moveMs: 0 };
+  const step = Math.min(120, Math.max(1, Math.round(spanR * 0.06)));
+  const delayMs = Math.min(Math.round(spanR * 0.36), (index % 5) * step);
+  const room = Math.max(1, spanR - delayMs);
+  const moveMs = Math.min(room, travel);
+  const attackMs = Math.min(160, moveMs, Math.max(40, Math.round(room * 0.18)));
+  return { delayMs, attackMs, moveMs };
+}
+
+export function decorDots(preset: LinePreset | undefined, spanMs: number, layout: DecorLayout): DecorDot[] {
+  if (!isDecor(preset)) return [];
+  const span = Math.max(0, spanMs);
+  const opacity0 = preset === "glow" ? 0.36 : preset === "arc" ? 0.6 : 0.55;
+  const opacity1 = preset === "glow" ? 0.14 : 0;
+  const travel = preset === "dust" ? 1200 : preset === "glow" ? 1500 : 1300;
+  return decorPairs(preset, layout).map(([x, y, x2, y2], index) => ({
+    x,
+    y,
+    x2,
+    y2,
+    size: speckSize(preset, index),
+    opacity0,
+    opacity1,
+    ...dotClock(index, span, travel),
+  }));
+}
+
+function decorPairs(preset: DecorPreset, layout: DecorLayout): Array<readonly [number, number, number, number]> {
+  const { size, extent, axis } = layout;
+  if (preset === "arc") {
+    const count = speckCount(extent, size, 0.48, 8, 16);
+    const path = lineSlots(count + 1, extent);
+    const gap = Math.round(size * 0.5);
+    const bow = Math.min(Math.round(size * 0.4), Math.max(Math.round(size * 0.16), Math.round(extent * 0.04)));
+    const cross = (index: number) => {
+      const t = path.length <= 1 ? 0 : index / (path.length - 1);
+      return Math.round(gap + bow * (4 * t * (1 - t)));
+    };
+    return path.slice(0, -1).map((_, index) => {
+      const start = onAxis(axis, path[index], cross(index));
+      const end = onAxis(axis, path[index + 1], cross(index + 1));
+      return [start.x, start.y, end.x, end.y] as const;
+    });
+  }
+  const count = preset === "dust" ? speckCount(extent, size, 0.42, 8, 20) : speckCount(extent, size, 1.35, 3, 7);
+  const along = lineSlots(count, extent);
+  const gap = Math.round(size * (preset === "dust" ? 0.42 : 0.72));
+  const drift = Math.round(size * (preset === "dust" ? 0.22 : 0.12));
+  const alongDrift = preset === "glow" ? Math.round(size * 0.08) : 0;
+  return along.map((at, index) => {
+    const wobble = preset === "dust" ? Math.round(size * DUST_WOBBLE[index % DUST_WOBBLE.length]) : 0;
+    const sign = preset === "dust" && axis === "x" ? -1 : index % 2 === 0 ? 1 : -1;
+    const cross = sign * (gap + wobble);
+    const start = onAxis(axis, at, cross);
+    const end = onAxis(axis, at + alongDrift, cross + sign * drift);
+    return [start.x, start.y, end.x, end.y] as const;
+  });
+}
+
+export function sampleDecor(
+  preset: LinePreset | undefined,
+  mediaMs: number,
+  startMs: number,
+  endMs: number,
+  layout: DecorLayout,
+): { x: number; y: number; opacity: number; size: number }[] {
+  const span = Math.max(0, endMs - startMs);
+  const elapsed = Math.min(Math.max(0, mediaMs - startMs), span);
+  return decorDots(preset, span, layout).map((dot) => {
+    const move = decorMoveWindow(dot, span);
+    const moveT =
+      move.t2 <= move.t1 || elapsed <= move.t1 ? 0 : elapsed >= move.t2 ? 1 : (elapsed - move.t1) / (move.t2 - move.t1);
+    return {
+      x: dot.x + (dot.x2 - dot.x) * moveT,
+      y: dot.y + (dot.y2 - dot.y) * moveT,
+      opacity: decorOpacityAt(dot, elapsed, span),
+      size: dot.size,
+    };
+  });
+}
+
+export function decorMoveWindow(dot: Pick<DecorDot, "delayMs" | "moveMs">, spanMs: number): { t1: number; t2: number } {
+  const span = Math.max(0, Math.round(spanMs));
+  const t1 = Math.min(span, Math.max(0, Math.round(dot.delayMs)));
+  const t2 = Math.min(span, t1 + Math.max(0, Math.round(dot.moveMs)));
+  return { t1, t2: Math.max(t1, t2) };
+}
+
+function fadeMarks(dot: Pick<DecorDot, "delayMs" | "attackMs" | "moveMs">, spanMs: number): { t1: number; t2: number; t3: number; t4: number } {
+  const span = Math.max(0, Math.round(spanMs));
+  const t1 = Math.min(span, Math.max(0, Math.round(dot.delayMs)));
+  const t2 = Math.min(span, t1 + Math.max(0, Math.round(dot.attackMs)));
+  const t3 = Math.min(span, Math.max(t2, t1 + Math.max(0, Math.round(dot.moveMs))));
+  return { t1, t2, t3, t4: span };
+}
+
+function decorOpacityAt(dot: Pick<DecorDot, "opacity0" | "opacity1" | "delayMs" | "attackMs" | "moveMs">, elapsed: number, spanMs: number): number {
+  const { t1, t2, t3, t4 } = fadeMarks(dot, spanMs);
+  if (elapsed <= t1) return 0;
+  if (elapsed <= t2) return t2 <= t1 ? dot.opacity0 : dot.opacity0 * ((elapsed - t1) / (t2 - t1));
+  if (elapsed <= t3) return dot.opacity0;
+  if (t4 <= t3) return dot.opacity1;
+  return dot.opacity0 + (dot.opacity1 - dot.opacity0) * Math.min(1, (elapsed - t3) / (t4 - t3));
+}
+
+export function decorFadeTag(dot: Pick<DecorDot, "opacity0" | "opacity1" | "delayMs" | "attackMs" | "moveMs">, spanMs: number): string {
+  const { t1, t2, t3, t4 } = fadeMarks(dot, spanMs);
+  return `\\fade(255,${assAlpha(dot.opacity0)},${assAlpha(dot.opacity1)},${t1},${t2},${t3},${t4})`;
 }
 
 export function placeLineClip(

@@ -7,7 +7,21 @@ import {
   type LyricLine,
 } from "./lyrics";
 import { assColor, assFontSize, defaultLook, isVerticalFlow, lyricFont, type LyricLook } from "./lyricLook";
-import { assFadeTag, assMotion, assPoseTags, assTransMotion, tintMs, transOffset, type MotionClip } from "./motion";
+import {
+  assFadeTag,
+  assMotion,
+  assPoseTags,
+  assTransMotion,
+  DECOR_MARK,
+  decorDots,
+  decorFadeTag,
+  decorLayout,
+  decorMoveWindow,
+  isDecor,
+  tintMs,
+  transOffset,
+  type MotionClip,
+} from "./motion";
 import { mediaMsForLyric } from "./preview";
 import { defaultTiming, type TrackTiming } from "./timing";
 
@@ -40,6 +54,7 @@ export function buildKaraokeAss(
       const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
       const lead = clip ? assMotion(clip, look, start, end, tint) : place(look);
       events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look)}`));
+      pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size);
       const trans = line.translatedText?.trim();
       if (trans) {
         const at = transAnchorPx(look, clip);
@@ -47,6 +62,7 @@ export function buildKaraokeAss(
           ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "")
           : posTag(at.x, at.y, "");
         events.push(dialogue("Trans", start, end, `${body}${escapeAss(trans)}`));
+        pushDecor(events, at, look.transColor, look, clip, start, end, "Trans", trans, look.transSize);
       }
     }
   }
@@ -137,7 +153,9 @@ function verticalEvents(
         ),
       );
     });
+    pushDecor(events, transAt, look.transColor, look, clip, start, end, "Trans", trans, look.transSize);
   }
+  pushDecor(events, anchor, look.color, look, clip, start, end, "Orig", line.text, look.size);
   return events;
 }
 
@@ -191,6 +209,31 @@ function glyphOverride(
   const color = clip?.preset === "tint" && switchMs == null ? tintOverride(fill, look.sungColor, spanMs) : `\\1c${assColor(fill)}`;
   const size = assFontSize(nominal, look.font);
   return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}${color}${fade}${sung}}`;
+}
+
+function pushDecor(
+  events: string[],
+  anchor: { x: number; y: number },
+  fill: string,
+  look: LyricLook,
+  clip: MotionClip | undefined,
+  start: number,
+  end: number,
+  style: string,
+  text: string,
+  nominal: number,
+): void {
+  if (!clip || !isDecor(clip.preset)) return;
+  const ox = Math.round(anchor.x);
+  const oy = Math.round(anchor.y);
+  const span = end - start;
+  const layout = decorLayout(text, nominal, isVerticalFlow(look.flow));
+  for (const dot of decorDots(clip.preset, span, layout)) {
+    const size = assFontSize(dot.size, look.font);
+    const move = decorMoveWindow(dot, span);
+    const tag = `{\\an5\\move(${ox + dot.x},${oy + dot.y},${ox + dot.x2},${oy + dot.y2},${move.t1},${move.t2})\\fs${size}\\bord0\\1c${assColor(fill)}${decorFadeTag(dot, span)}}`;
+    events.push(dialogue(style, start, end, `${tag}${DECOR_MARK}`));
+  }
 }
 
 function tintOverride(from: string, to: string, spanMs: number): string {
