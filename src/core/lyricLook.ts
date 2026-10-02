@@ -119,6 +119,30 @@ export function assColor(hexColor: string): string {
   return `&H00${safe.slice(4, 6)}${safe.slice(2, 4)}${safe.slice(0, 2)}&`.toUpperCase();
 }
 
+export function mixHex(from: string, to: string, t: number): string {
+  if (t <= 0) return from;
+  const a = rgb(from);
+  const b = rgb(to);
+  const u = Math.min(1, t);
+  const channel = (index: number) => Math.round(a[index] + (b[index] - a[index]) * u).toString(16).padStart(2, "0");
+  return `#${channel(0)}${channel(1)}${channel(2)}`;
+}
+
+/** 句頭用裙邊色，句尾用唱到色。只有一字就保持裙邊色。 */
+export function edgeOutlineAt(from: string, to: string, index: number, count: number): string {
+  if (count <= 1) return from;
+  return mixHex(from, to, index / (count - 1));
+}
+
+function rgb(hexColor: string): [number, number, number] {
+  const safe = hexColor.replace("#", "").slice(0, 6).padEnd(6, "0");
+  return [
+    Number.parseInt(safe.slice(0, 2), 16) || 0,
+    Number.parseInt(safe.slice(2, 4), 16) || 0,
+    Number.parseInt(safe.slice(4, 6), 16) || 0,
+  ];
+}
+
 export function canvasFont(look: LyricLook, px: number): string {
   const face = lyricFont(look.font).family;
   return `${Math.max(1, px)}px "${face}", "Microsoft JhengHei", sans-serif`;

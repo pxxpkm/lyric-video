@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildKaraokeAss, karaokeCentiseconds } from "../../src/core/ass";
 import { lyricLine } from "../../src/core/lyrics";
-import { assColor, assFontSize, defaultLook } from "../../src/core/lyricLook";
+import { assColor, assFontSize, defaultLook, edgeOutlineAt } from "../../src/core/lyricLook";
 import { decorDots, decorFadeTag, decorLayout, decorMoveWindow, setLineFade, setLinePreset, type MotionClip } from "../../src/core/motion";
 import { testClipLines } from "../../src/core/preview";
 import { exampleProject, parseProject } from "../../src/core/project";
@@ -246,6 +246,46 @@ describe("karaoke.ass", () => {
     const lyric = arc.split("\n").find((row) => row.includes("第一句"));
     expect(lyric).toContain("\\pos(");
     expect(lyric).not.toContain("\\move");
+  });
+
+  it("漸邊由裙邊色漸到唱到色，歌詞仍然停住", () => {
+    const colors = (count: number) =>
+      Array.from({ length: count }, (_, index) => assColor(edgeOutlineAt(defaultLook.outlineColor, defaultLook.sungColor, index, count)));
+    const tags = (row: string | undefined) => [...(row ?? "").matchAll(/\\3c(&H[0-9A-F]+&)/gi)].map((match) => match[1].toUpperCase());
+    const clip = presetClip("1000|第一句", "第一句", 1000, 3000, "edge");
+    const ass = buildKaraokeAss(testClipLines(), undefined, defaultLook, [clip]);
+    const lyric = ass.split("\n").find((row) => row.includes("0:00:01.00") && row.includes("第") && !row.includes("二"));
+    expect(lyric).toContain("\\pos(");
+    expect(lyric).not.toContain("\\move");
+    expect(lyric).not.toContain("●");
+    expect(tags(lyric)).toEqual(colors(3));
+    expect(new Set(tags(lyric)).size).toBe(3);
+    const plain = buildKaraokeAss(testClipLines()).split("\n").find((row) => row.includes("第一句"));
+    expect(tags(plain)).toEqual([assColor(defaultLook.outlineColor)]);
+    const vertical = buildKaraokeAss(testClipLines(), undefined, { ...defaultLook, flow: "vertical", size: 40 }, [clip]);
+    const glyphs = ["846", "886", "926"].map((y) => vertical.split("\n").find((row) => row.includes(`\\pos(960,${y})`)));
+    expect(glyphs.every((row) => row?.includes("\\pos(") && !row.includes("\\move"))).toBe(true);
+    expect(glyphs.map((row) => tags(row)[0])).toEqual(colors(3));
+    const both = buildKaraokeAss(testClipLines(), undefined, defaultLook, [
+      presetClip("3000|第二句", "第二句", 3000, 6000, "edge"),
+    ]);
+    const orig = both.split("\n").find((row) => row.includes("Dialogue: 0,0:00:03.00,") && row.includes(",Orig,"));
+    const trans = both.split("\n").find((row) => row.includes("Dialogue: 0,0:00:03.00,") && row.includes(",Trans,"));
+    expect(tags(orig)).toEqual(colors(3));
+    expect(tags(trans)).toEqual(colors(5));
+    const line = lyricLine(1_000, "甲乙", {
+      translatedText: "丙",
+      words: [
+        { startMs: 0, durMs: 500, text: "甲" },
+        { startMs: 500, durMs: 500, text: "乙" },
+      ],
+    });
+    const timed = buildKaraokeAss([line], undefined, defaultLook, [presetClip("1000|甲乙", "甲乙", 1000, 15_500, "edge")]);
+    const sung = timed.split("\n").find((row) => row.includes("\\k"));
+    expect(sung).toContain("\\k");
+    expect(sung).not.toContain("●");
+    expect(tags(sung)).toEqual(colors(2));
+    expect(timed).toContain(`\\1c${assColor(defaultLook.sungColor)}`);
   });
 
   it("有逐字嘅原文加微塵仍然保留 \\k，小點冇 \\k", () => {

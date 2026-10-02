@@ -1,6 +1,6 @@
 import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/preview";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
-import { canvasFont, defaultLook, isVerticalFlow, type LyricLook } from "../../core/lyricLook";
+import { canvasFont, defaultLook, edgeOutlineAt, isVerticalFlow, mixHex, type LyricLook } from "../../core/lyricLook";
 import {
   isDecor,
   lyricBands,
@@ -91,6 +91,7 @@ export function drawPreview(
   const edge = Math.max(look.outline * scale, look.outline > 0 ? 1 : 0);
   const placed = linePlacement(clips, frame.key, mediaMs, look, shown, timing);
   const translated = transPlacement(clips, frame.key, mediaMs, look, shown, timing);
+  const edged = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset === "edge";
   const x = placed.x * width;
   const y = placed.y * height;
   const transX = translated.x * width;
@@ -107,7 +108,7 @@ export function drawPreview(
       main: glyphs.length,
       trans: Array.from(frame.trans).length,
     });
-    drawColumn(ctx, glyphs, bands.main, look, fontPx, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint);
+    drawColumn(ctx, glyphs, bands.main, look, fontPx, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint, look.outlineColor, edged);
     if (frame.trans && bands.trans) {
       drawColumn(
         ctx,
@@ -118,6 +119,8 @@ export function drawPreview(
         edge,
         translated,
         translated.tint,
+        look.outlineColor,
+        edged,
       );
     }
   } else {
@@ -125,14 +128,27 @@ export function drawPreview(
     const words = line?.words ?? null;
     const bands = measureBands(ctx, shown, frame, mediaMs, timing, look, clips, width, height);
     withPose(ctx, x, y, placed, () => {
-      if (hasKaraoke(words, frame)) drawCurrent(ctx, words, frame, x, y, look, fontPx, edge);
+      if (edged) drawEdged(ctx, words, frame, x, y, look, fontPx, edge);
+      else if (hasKaraoke(words, frame)) drawCurrent(ctx, words, frame, x, y, look, fontPx, edge);
       else paint(ctx, frame.text, x, y, mixHex(look.color, look.sungColor, placed.tint), look.outlineColor, edge);
     });
     if (frame.trans && bands?.trans) {
       const at = bands.trans;
       withPose(ctx, at.x, at.y, translated, () => {
         ctx.font = canvasFont(look, transPx);
-        paint(ctx, frame.trans, at.x, at.y, mixHex(look.transColor, look.sungColor, translated.tint), look.outlineColor, edge);
+        const fill = mixHex(look.transColor, look.sungColor, translated.tint);
+        if (edged) {
+          paintRun(
+            ctx,
+            Array.from(frame.trans).map((ch) => ({ ch, fill })),
+            at.x,
+            at.y,
+            edge,
+            look,
+          );
+        } else {
+          paint(ctx, frame.trans, at.x, at.y, fill, look.outlineColor, edge);
+        }
       });
     }
   }
@@ -213,12 +229,13 @@ function measureBands(
     });
   }
   const line = shown[frame.index];
+  const edged = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset === "edge";
   ctx.font = canvasFont(look, fontPx);
-  const main = textWidth(ctx, line?.words ?? null, frame);
+  const main = edged ? runWidth(ctx, frame.text) : textWidth(ctx, line?.words ?? null, frame);
   let trans = 0;
   if (frame.trans) {
     ctx.font = canvasFont(look, transPx);
-    trans = ctx.measureText(frame.trans).width;
+    trans = edged ? runWidth(ctx, frame.trans) : ctx.measureText(frame.trans).width;
   }
   return lyricBands(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), { main, trans });
 }
@@ -257,6 +274,7 @@ function drawColumn(
   pose: { scale: number; deg: number } = { scale: 1, deg: 0 },
   tint = 0,
   outline = look.outlineColor,
+  ramp = false,
 ): void {
   if (glyphs.length === 0) return;
   const step = band.h / glyphs.length;
@@ -269,8 +287,52 @@ function drawColumn(
     const gx = band.x;
     const gy = top + index * step;
     const fill = tint > 0 ? mixHex(glyph.fill, look.sungColor, tint) : glyph.fill;
-    withPose(ctx, gx, gy, pose, () => paint(ctx, glyph.ch, gx, gy, fill, outline, edge));
+    const stroke = ramp ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : outline;
+    withPose(ctx, gx, gy, pose, () => paint(ctx, glyph.ch, gx, gy, fill, stroke, edge));
   });
+}
+
+function drawEdged(
+  ctx: CanvasRenderingContext2D,
+  words: { text: string }[] | null,
+  frame: PreviewFrame,
+  center: number,
+  y: number,
+  look: LyricLook,
+  fontPx: number,
+  edge: number,
+): void {
+  ctx.font = canvasFont(look, fontPx);
+  const glyphs = hasKaraoke(words, frame)
+    ? (words ?? []).flatMap((word, index) =>
+        Array.from(word.text).map((ch) => ({
+          ch,
+          fill: index <= frame.wordIndex ? look.sungColor : withAlpha(look.color, 0.45),
+        })),
+      )
+    : Array.from(frame.text).map((ch) => ({ ch, fill: look.color }));
+  paintRun(ctx, glyphs, center, y, edge, look);
+}
+
+function paintRun(
+  ctx: CanvasRenderingContext2D,
+  glyphs: { ch: string; fill: string }[],
+  center: number,
+  y: number,
+  edge: number,
+  look: LyricLook,
+): void {
+  if (glyphs.length === 0) return;
+  const widths = glyphs.map((glyph) => ctx.measureText(glyph.ch).width);
+  const total = widths.reduce((sum, width) => sum + width, 0);
+  let x = center - total / 2;
+  const align = ctx.textAlign;
+  ctx.textAlign = "left";
+  glyphs.forEach((glyph, index) => {
+    paint(ctx, glyph.ch, x, y, glyph.fill, edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length), edge);
+    x += widths[index];
+  });
+  ctx.textAlign = align;
 }
 
 function withPose(
@@ -292,6 +354,10 @@ function withPose(
   ctx.translate(-x, -y);
   draw();
   ctx.restore();
+}
+
+function runWidth(ctx: CanvasRenderingContext2D, text: string): number {
+  return Array.from(text).reduce((sum, ch) => sum + ctx.measureText(ch).width, 0);
 }
 
 function textWidth(ctx: CanvasRenderingContext2D, words: { text: string }[] | null, frame: PreviewFrame): number {
@@ -368,20 +434,6 @@ function paint(
   }
   ctx.fillStyle = fill;
   ctx.fillText(text, x, y);
-}
-
-function mixHex(from: string, to: string, t: number): string {
-  if (t <= 0) return from;
-  const a = hexRgb(from);
-  const b = hexRgb(to);
-  const u = Math.min(1, t);
-  const ch = (index: number) => Math.round(a[index] + (b[index] - a[index]) * u).toString(16).padStart(2, "0");
-  return `#${ch(0)}${ch(1)}${ch(2)}`;
-}
-
-function hexRgb(hexColor: string): [number, number, number] {
-  const hex = hexColor.replace("#", "").slice(0, 6).padEnd(6, "0");
-  return [Number.parseInt(hex.slice(0, 2), 16) || 0, Number.parseInt(hex.slice(2, 4), 16) || 0, Number.parseInt(hex.slice(4, 6), 16) || 0];
 }
 
 function withAlpha(hexColor: string, alpha: number): string {

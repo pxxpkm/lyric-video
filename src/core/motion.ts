@@ -5,7 +5,7 @@ import type { TrackTiming } from "./timing";
 export type MotionFrame = { x: number; y: number; opacity: number };
 
 /** 一句一個。冇有就停住。存檔只存呢個名，取樣時先展開。 */
-export const linePresetNames = ["fly", "scale", "turn", "tint", "dust", "glow", "arc"] as const;
+export const linePresetNames = ["fly", "scale", "turn", "tint", "edge", "dust", "glow", "arc"] as const;
 export type LinePreset = (typeof linePresetNames)[number];
 export type DecorPreset = "dust" | "glow" | "arc";
 

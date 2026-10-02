@@ -6,7 +6,7 @@ import {
   timeOfMs,
   type LyricLine,
 } from "./lyrics";
-import { assColor, assFontSize, defaultLook, isVerticalFlow, lyricFont, type LyricLook } from "./lyricLook";
+import { assColor, assFontSize, defaultLook, edgeOutlineAt, isVerticalFlow, lyricFont, type LyricLook } from "./lyricLook";
 import {
   assFadeTag,
   assMotion,
@@ -53,7 +53,7 @@ export function buildKaraokeAss(
       const wordTimed = pieces.some((piece) => piece.cs != null);
       const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
       const lead = clip ? assMotion(clip, look, start, end, tint) : place(look);
-      events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look)}`));
+      events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look, clip?.preset === "edge")}`));
       pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size);
       const trans = line.translatedText?.trim();
       if (trans) {
@@ -61,7 +61,8 @@ export function buildKaraokeAss(
         const body = clip
           ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "")
           : posTag(at.x, at.y, "");
-        events.push(dialogue("Trans", start, end, `${body}${escapeAss(trans)}`));
+        const transText = clip?.preset === "edge" ? edgeBody(trans, look.outlineColor, look.sungColor) : escapeAss(trans);
+        events.push(dialogue("Trans", start, end, `${body}${transText}`));
         pushDecor(events, at, look.transColor, look, clip, start, end, "Trans", trans, look.transSize);
       }
     }
@@ -112,10 +113,35 @@ function karaokePieces(line: LyricLine, clipMs: number, rate: number): KaraokePi
   return parts.map((cs, index) => ({ cs, text: kept[index]?.text ?? "" }));
 }
 
-function karaokeBody(pieces: KaraokePiece[], look: LyricLook): string {
-  if (pieces.every((piece) => piece.cs == null)) return escapeAss(pieces.map((piece) => piece.text).join(""));
-  const body = pieces.map((piece) => `{\\k${piece.cs ?? 0}}${escapeAss(piece.text)}`).join("");
-  return `{\\1c${assColor(look.sungColor)}\\2c${assColor(look.color)}}${body}`;
+function karaokeBody(pieces: KaraokePiece[], look: LyricLook, edged = false): string {
+  if (!edged) {
+    if (pieces.every((piece) => piece.cs == null)) return escapeAss(pieces.map((piece) => piece.text).join(""));
+    const body = pieces.map((piece) => `{\\k${piece.cs ?? 0}}${escapeAss(piece.text)}`).join("");
+    return `{\\1c${assColor(look.sungColor)}\\2c${assColor(look.color)}}${body}`;
+  }
+  const count = Math.max(1, pieces.reduce((sum, piece) => sum + Array.from(piece.text).length, 0));
+  let index = 0;
+  const painted = pieces
+    .map((piece) =>
+      Array.from(piece.text)
+        .map((ch, offset) => {
+          const outline = `\\3c${assColor(edgeOutlineAt(look.outlineColor, look.sungColor, index, count))}`;
+          index += 1;
+          const timing = offset === 0 && piece.cs != null ? `\\k${piece.cs}` : "";
+          return `{${timing}${outline}}${escapeAss(ch)}`;
+        })
+        .join(""),
+    )
+    .join("");
+  if (pieces.every((piece) => piece.cs == null)) return painted;
+  return `{\\1c${assColor(look.sungColor)}\\2c${assColor(look.color)}}${painted}`;
+}
+
+function edgeBody(text: string, from: string, to: string): string {
+  const chars = Array.from(text);
+  return chars
+    .map((ch, index) => `{\\3c${assColor(edgeOutlineAt(from, to, index, chars.length))}}${escapeAss(ch)}`)
+    .join("");
 }
 
 function verticalEvents(
@@ -131,12 +157,13 @@ function verticalEvents(
   const fade = clip ? assFadeTag(clip, start, end) : "";
   const span = end - start;
   const glyphs = stackGlyphs(pieces);
+  const edged = clip?.preset === "edge";
   const events = glyphs.map((glyph, index) =>
     dialogue(
       "Orig",
       start,
       end,
-      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, look.size, index), look.size, look, fade, glyph.switchMs, look.color, clip, span)}${escapeAss(glyph.ch)}`,
+      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, look.size, index), look.size, look, fade, glyph.switchMs, look.color, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor)}${escapeAss(glyph.ch)}`,
     ),
   );
   const trans = line.translatedText?.trim();
@@ -149,7 +176,7 @@ function verticalEvents(
           "Trans",
           start,
           end,
-          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), step, look, fade, null, look.transColor, clip, span)}${escapeAss(ch)}`,
+          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), step, look, fade, null, look.transColor, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, chars.length) : look.outlineColor)}${escapeAss(ch)}`,
         ),
       );
     });
@@ -203,12 +230,13 @@ function glyphOverride(
   fill: string,
   clip: MotionClip | undefined,
   spanMs: number,
+  outline: string,
 ): string {
   const pose = assPoseTags(clip?.preset, Math.round(x), Math.round(y), spanMs);
   const sung = switchMs == null ? "" : `\\t(${Math.round(switchMs)},${Math.round(switchMs)},\\1c${assColor(look.sungColor)})`;
   const color = clip?.preset === "tint" && switchMs == null ? tintOverride(fill, look.sungColor, spanMs) : `\\1c${assColor(fill)}`;
   const size = assFontSize(nominal, look.font);
-  return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(look.outlineColor)}${color}${fade}${sung}}`;
+  return `{\\an5${pose}\\fs${size}\\bord${look.outline}\\3c${assColor(outline)}${color}${fade}${sung}}`;
 }
 
 function pushDecor(

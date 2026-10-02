@@ -134,6 +134,7 @@ export function ShapePanel({
               ["scale", "放大"],
               ["turn", "擺正"],
               ["tint", "變色"],
+              ["edge", "漸邊"],
               ["dust", "微塵"],
               ["glow", "光斑"],
               ["arc", "弧線"],
@@ -153,7 +154,7 @@ export function ShapePanel({
         <p className="meta span">
           {preset === "mixed"
             ? "呢幾句預設唔同。再揀一個就全部用同一個。"
-            : "飛入由下移上。放大、擺正同變色都喺句頭。微塵、光斑、弧線沿住成句，小點細啲而且錯開。預設會燒進入面。"}
+            : "飛入由下移上。放大、擺正同變色都喺句頭。漸邊沿住成句改裙邊色。微塵、光斑、弧線沿住成句，小點細啲而且錯開。預設會燒進入面。"}
         </p>
         <div className="row span">
           <Range label="淡入" min={0} max={1} value={fadeIn} disabled={!canPlace} onChange={(amount) => fadeLine("in", amount)} />
