@@ -5,6 +5,7 @@ import type { PreviewSession } from "../../shared/preview";
 import type { QueueJob } from "./lyric";
 import { PickSong } from "./PickSong";
 import { Preview } from "./Preview";
+import { CacheLibrary } from "./CacheLibrary";
 
 type Source = { kind: "youtube"; url: string } | { kind: "file"; path: string } | null;
 
@@ -17,6 +18,7 @@ function formatDuration(ms: number): string {
 }
 
 export function App() {
+  const [showCache, setShowCache] = useState(false);
   const [status, setStatus] = useState("尚未匯入");
   const [url, setUrl] = useState("");
   const [source, setSource] = useState<Source>(null);
@@ -230,9 +232,12 @@ export function App() {
     );
   }
 
+  if (showCache) return <CacheLibrary onClose={() => setShowCache(false)} />;
+
   return (
     <main>
       <h1>歌詞影片</h1>
+      <button disabled={busy || jobs.some((job) => job.status === "running" || job.status === "waiting")} onClick={() => setShowCache(true)}>下載素材／清除緩存</button>
       <p className="status">{status}</p>
       <div className="card">
         <label>

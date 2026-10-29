@@ -9,6 +9,8 @@ import { enqueueFile, enqueueTest, enqueueUrls, listJobs, openJob } from "./queu
 import { readSettings, writeSettings } from "./settings";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { IMPORT_FAIL } from "./media";
+import { studioRoot } from "./paths";
+import { cacheEntry, listCache, trashCacheEntries } from "./cacheLibrary";
 import { createTestClip, loadPreview, savePreviewTiming } from "./testClip";
 import { clampLook, type LyricLook } from "../core/lyricLook";
 import type { MotionClip } from "../core/motion";
@@ -71,6 +73,36 @@ function exportRequest(value: unknown): ExportRequest | null {
 }
 
 export function registerImportIpc(): void {
+  ipcMain.handle("cache:trash-all", async () => {
+    const idle = () => !exportBusy && !listJobs().some((job) => job.status === "running" || job.status === "waiting");
+    if (!idle()) return "請等下載及匯出完成後再清除。";
+    const entries = (await listCache(studioRoot())).filter((entry) => entry.clearable);
+    if (!entries.length) return "沒有可安全清除的下載素材；未確認檔案會保留。";
+    const projects = [...new Set(entries.flatMap((entry) => entry.projects))];
+    const megabytes = (entries.reduce((sum, entry) => sum + entry.bytes, 0) / 1024 / 1024).toFixed(1);
+    const answer = await dialog.showMessageBox({
+      type: "warning", title: "全部清除下載素材",
+      message: `將全部 ${entries.length} 個下載素材（${megabytes} MB）移至資源回收筒？`,
+      detail: `引用素材的專案將無法播放或匯出；重新新增連結會再下載。專案設定會保留。\n\n引用專案：\n${projects.join("\n") || "未找到引用專案"}`,
+      buttons: ["取消", "全部移至資源回收筒"], defaultId: 0, cancelId: 0,
+    });
+    if (answer.response !== 1) return "";
+    const result = await trashCacheEntries(studioRoot(), entries, (path) => shell.trashItem(path), idle);
+    return `已清除 ${result.cleared} 個素材。${result.failed.length ? `未清除 ${result.failed.length} 個：\n${result.failed.join("\n")}\n檔案可能正被使用或有工作處理中，請稍後再試。` : ""}`;
+  });
+  ipcMain.handle("cache:list", () => listCache(studioRoot()));
+  ipcMain.handle("cache:trash", async (_event, path: unknown) => {
+    if (typeof path !== "string") return "無效素材";
+    if (exportBusy || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "請等下載及匯出完成後再清除。";
+    const entry = await cacheEntry(studioRoot(), path);
+    if (!entry) return "素材已不存在，請重新整理。";
+    const answer = await dialog.showMessageBox({ type: "warning", title: "清除下載素材", message: `將 ${entry.name} 移至資源回收筒？`, detail: `引用此檔的專案將無法播放或匯出；重新新增連結會再下載。專案設定會保留。\n\n引用專案：\n${entry.projects.join("\n") || "未找到引用專案（可能是未完成下載）"}`, buttons: ["取消", "移至資源回收筒"], defaultId: 0, cancelId: 0 });
+    if (answer.response !== 1) return "";
+    if (exportBusy || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "有工作處理中，請稍後再試。";
+    const current = await cacheEntry(studioRoot(), path);
+    if (!current || current.bytes !== entry.bytes || current.modified !== entry.modified) return "素材已變更，請重新整理。";
+    try { await shell.trashItem(path); return ""; } catch { return "未能移至資源回收筒，檔案可能正被使用。"; }
+  });
   ipcMain.handle("import:probe-url", async (_event, url: unknown, current: unknown) => {
     if (typeof url !== "string") return { ok: false, error: IMPORT_FAIL };
     return describeUrl(url, fields(current));

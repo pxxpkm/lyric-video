@@ -4,6 +4,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { readDownloadPercent, readFfprobeDuration, readYtdlpDump } from "../core/importPlan";
 import { resourceRoot, studioRoot } from "./paths";
+import { recordDownloadFiles } from "./downloadReceipt";
 
 const FAIL = "下載失敗，請改拖本機檔。";
 
@@ -133,6 +134,7 @@ export async function downloadUrl(
       if (percent != null) onPercent?.(percent);
     }
   });
+  await recordDownloadFiles(directory);
   if (result.code !== 0) return { ok: false, error: importFailure(result.stderr) };
 
   const marked = [...result.stdout.matchAll(/^FILE:(.+)$/gm)].map((match) => match[1].trim());

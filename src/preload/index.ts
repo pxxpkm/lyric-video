@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("lyric", {
+  listCache: () => ipcRenderer.invoke("cache:list"),
+  trashCache: (path: string) => ipcRenderer.invoke("cache:trash", path),
+  trashAllCache: () => ipcRenderer.invoke("cache:trash-all"),
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   probeUrl: (url: string, fields: unknown) => ipcRenderer.invoke("import:probe-url", url, fields),
   probeFile: (filePath: string, fields: unknown) => ipcRenderer.invoke("import:probe-file", filePath, fields),

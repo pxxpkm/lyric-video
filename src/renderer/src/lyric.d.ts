@@ -5,6 +5,9 @@ import type { PreviewSession } from "../../shared/preview";
 type Fields = { lockTitle: boolean; lockArtist: boolean; title: string; artist: string };
 
 export type LyricBridge = {
+  listCache: () => Promise<import("../../shared/cache").CacheEntry[]>;
+  trashCache: (path: string) => Promise<string>;
+  trashAllCache: () => Promise<string>;
   pathForFile: (file: File) => string;
   probeUrl: (url: string, fields: Fields) => Promise<ProbeResult>;
   probeFile: (filePath: string, fields: Fields) => Promise<ProbeResult>;
