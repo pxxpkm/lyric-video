@@ -8,3 +8,5 @@ studio-data/
 *.log
 .vs/
 .commandcode/
+tools/
+cookies.txt

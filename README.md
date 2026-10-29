@@ -29,6 +29,12 @@
 
 沒有這兩個，連結讀不到標題，也燒不出片子。讀取失敗時，可以改拖本機檔。
 
+亦可以將官方 Windows 獨立版 `yt-dlp.exe` 放在專案的 `tools/`，程式會優先使用，避免 PATH 指向已失效的 Python 虛擬環境。請從官方 release 下載，並核對同版 `SHA2-256SUMS`。此目錄不會提交或自動打包；已安裝版仍使用 PATH，或其 `resources/tools/yt-dlp.exe`。YouTube 亦需要可用的 JavaScript runtime（例如 Deno）。
+
+遇到 `Could not copy Chrome cookie database`，可能係 Chrome 仍鎖住 Cookies。先儲存工作，再自行完整退出 Chrome（包括背景程序）後重試；不要強制關閉。若之後報 DPAPI 解密失敗，屬另一項瀏覽器加密限制，關閉 Chrome 或更新 yt-dlp 未必解決。不要停用瀏覽器保護，亦不要上傳 Cookies；可以改拖本機影音。YouTube 要求登入或驗證時，請自行在瀏覽器處理，程式不會繞過。
+
+如自行匯出 Netscape 格式的 Cookies，可放在 `studio-data/cookies.txt`（已安裝版用其專案資料目錄下同名檔）。有此檔案時，YouTube 連結的資料讀取及下載會以它向 YouTube 登入；其他來源不會自動帶入此檔。檔案只留本機、不會入 Git；不要分享或放入安裝包。JSON 格式的瀏覽器匯出檔需先轉換。
+
 ## 從源碼跑
 
 需要 Node.js。

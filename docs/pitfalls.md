@@ -6,12 +6,28 @@
 
 ## 本專案已遇到
 
+### 2026-10-30 開發伺服器只監聽 IPv6，Electron localhost 白畫面
+
+- 現象：Vite 顯示已啟動，但 Electron 載入 localhost:5173 報 ERR_CONNECTION_REFUSED。
+- 原因：本機舊伺服器只監聽 [::1]:5173，IPv4 連線被拒；localhost 在不同程序使用的地址不一致會造成此問題。
+- 對策：renderer.server.host 明確設 127.0.0.1，讓 electron-vite 組同一個地址；strictPort true 防止自動換埠後 Electron 用舊埠。重開後 HTTP 200，Electron 無障礙樹確認完整介面。electron-vite CLI 不接受 --host，須在設定檔寫。
+- 影響：開發版啟動，打包版不使用 Vite 開發伺服器。
+
+
+### 2026-10-30 Chrome Cookies 鎖檔同失效的 yt-dlp 啟動器
+
+- 現象：Chrome Cookies 報 Could not copy Chrome cookie database；另一路 PATH 工具連 --version 都報 No Python at。
+- 原因：Default Cookie 資料庫被運行中的 Chrome 鎖住。PATH 的 Hermes venv 啟動器則指向已失效的 Python，套件版本新亦不能執行。兩件事獨立；YouTube 無 Cookies 測試另外要求登入確認非機械人。
+- 對策：不強制關瀏覽器、不清設定、不上傳 Cookies。專案 tools/ 放官方獨立版並核對 SHA256，避開壞的啟動器；關閉 Chrome 必須由使用者儲存工作後自行處理。關閉後仍可能有 App-Bound/DPAPI 解密問題，不能保證更新工具就解決。未能通過登入就改拖本機檔。
+- 影響：YouTube 匯入診斷，現有安裝版未重新打包。
+
+
 ### 2026-10-03 播放中字停住仍然每幀清畫布
 
 - 現象：暫停之後 GPU 會跌，一播就又升到大約九成八。句中間個字已經停低都係。
 - 原因：暫停停畫只停咗迴圈。播緊仍然跟螢幕更新率，每幀清一次歌詞畫布，再畫原文、譯文同裙邊。柔邊大於 0 再加一次模糊。進度條亦每幀改寬度。
 - 對策：同一幅歌詞唔再清畫布。淡入、飛入、放大、擺正、變色、裝飾先再畫，大約每 33 毫秒一次。跳時間、拖、改外觀、字體載入即刻畫。畫面大細少過兩點唔當另一幅圖。暫停同播完仍然畫一幀就停。
-- 影響：預覽播放。未再量工作管理員的百分比。
+- 影響：預覽播放。使用者其後話播放已經減輕 GPU 用量。冇再報一個新百分比。
 
 ### 2026-10-03 暫停預覽仍然每幀用 GPU
 

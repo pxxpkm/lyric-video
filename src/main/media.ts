@@ -1,9 +1,44 @@
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { readDownloadPercent, readFfprobeDuration, readYtdlpDump } from "../core/importPlan";
+import { resourceRoot, studioRoot } from "./paths";
 
 const FAIL = "下載失敗，請改拖本機檔。";
+
+export function ytdlpCommand(): string {
+  const local = join(resourceRoot(), "tools", "yt-dlp.exe");
+  return existsSync(local) ? local : "yt-dlp";
+}
+
+export function ytdlpCookieArgs(url: string): string[] {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch {
+    return [];
+  }
+  const youtube = hostname === "youtu.be" || hostname === "youtube.com" || hostname.endsWith(".youtube.com");
+  const cookies = join(studioRoot(), "cookies.txt");
+  return youtube && existsSync(cookies) ? ["--cookies", cookies] : [];
+}
+
+export function importFailure(stderr: string): string {
+  if (/Could not copy Chrome cookie database/i.test(stderr)) {
+    return "Chrome 的 Cookies 資料庫正被鎖住或無法讀取。請儲存工作後自行完整退出 Chrome 再試，或改拖本機檔。";
+  }
+  if (/decrypt.*DPAPI|DPAPI.*decrypt|app.bound/i.test(stderr)) {
+    return "無法解密瀏覽器 Cookies。請改拖本機檔；不要停用瀏覽器保護。";
+  }
+  if (/No Python at|ENOENT/i.test(stderr)) {
+    return "yt-dlp 無法啟動，請檢查工具安裝。亦可以改拖本機檔。";
+  }
+  if (/Sign in to confirm|login required|confirm you.re not a bot/i.test(stderr)) {
+    return "YouTube 要求登入或驗證，暫時無法讀取。請在瀏覽器確認，或改拖本機檔。";
+  }
+  return FAIL;
+}
 
 export type CommandResult = { code: number; stdout: string; stderr: string };
 
@@ -39,14 +74,15 @@ export function runCommand(
 export async function probeUrl(url: string): Promise<
   { ok: true; id: string; title: string; uploader: string; durationMs: number | null } | { ok: false; error: string }
 > {
-  const result = await runCommand("yt-dlp", [
+  const result = await runCommand(ytdlpCommand(), [
+    ...ytdlpCookieArgs(url),
     "--skip-download",
     "--no-playlist",
     "--no-warnings",
     "--dump-json",
     url,
   ]);
-  if (result.code !== 0) return { ok: false, error: FAIL };
+  if (result.code !== 0) return { ok: false, error: importFailure(result.stderr) };
   const dump = readYtdlpDump(result.stdout);
   if (!dump) return { ok: false, error: FAIL };
   return { ok: true, ...dump };
@@ -74,6 +110,7 @@ export async function downloadUrl(
 ): Promise<{ ok: true; mediaPath: string } | { ok: false; error: string }> {
   await mkdir(directory, { recursive: true });
   const args = [
+    ...ytdlpCookieArgs(url),
     "--no-playlist",
     "--no-warnings",
     "--newline",
@@ -87,7 +124,7 @@ export async function downloadUrl(
   args.push(url);
 
   let buffer = "";
-  const result = await runCommand("yt-dlp", args, (chunk) => {
+  const result = await runCommand(ytdlpCommand(), args, (chunk) => {
     buffer += chunk;
     const lines = buffer.split(/\r|\n/);
     buffer = lines.pop() ?? "";
@@ -96,7 +133,7 @@ export async function downloadUrl(
       if (percent != null) onPercent?.(percent);
     }
   });
-  if (result.code !== 0) return { ok: false, error: FAIL };
+  if (result.code !== 0) return { ok: false, error: importFailure(result.stderr) };
 
   const marked = [...result.stdout.matchAll(/^FILE:(.+)$/gm)].map((match) => match[1].trim());
   const printed = marked.filter((line) => line.length > 0).at(-1);

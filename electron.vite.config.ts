@@ -10,5 +10,9 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react()],
+    server: {
+      host: "127.0.0.1",
+      strictPort: true,
+    },
   },
 });
