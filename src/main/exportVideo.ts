@@ -10,6 +10,7 @@ import { lyricLine, type LyricLine } from "../core/lyrics";
 import { timingFromProject } from "../core/projectTiming";
 import type { PreviewLine, StoredTiming } from "../shared/preview";
 import { runCommand } from "./media";
+import type { TextMeasurement } from "../core/textWidth";
 
 export type ExportRequest = {
   projectPath: string;
@@ -22,6 +23,7 @@ export type ExportRequest = {
   title?: string;
   outPath: string;
   motion?: MotionClip[];
+  textMeasurements?: TextMeasurement[];
 };
 
 export async function exportProject(
@@ -125,19 +127,19 @@ export async function exportProject(
 }
 
 /** 同燒進 MP4 的那份字幕。呼叫端決定寫去邊。 */
-export function karaokeAssDocument(request: Pick<ExportRequest, "lines" | "timing" | "look" | "motion">): string {
+export function karaokeAssDocument(request: Pick<ExportRequest, "lines" | "timing" | "look" | "motion" | "textMeasurements">): string {
   const lines = request.lines.map((line) =>
     lyricLine(line.atMs, line.text, {
       translatedText: line.trans || null,
       words: line.words.length > 0 ? line.words : null,
     }),
   ) satisfies LyricLine[];
-  return buildKaraokeAss(lines, timingFromProject(request.timing), clampLook(request.look), request.motion ?? []);
+  return buildKaraokeAss(lines, timingFromProject(request.timing), clampLook(request.look), request.motion ?? [], request.textMeasurements);
 }
 
 export async function saveAssFile(
   outPath: string,
-  request: Pick<ExportRequest, "lines" | "timing" | "look" | "motion">,
+  request: Pick<ExportRequest, "lines" | "timing" | "look" | "motion" | "textMeasurements">,
 ): Promise<{ ok: true; outPath: string } | { ok: false; error: string }> {
   const path = outPath.toLowerCase().endsWith(".ass") ? outPath : `${outPath}.ass`;
   try {

@@ -26,6 +26,7 @@ export type LyricBridge = {
   ) => Promise<boolean>;
   chironFont: () => Promise<ArrayBuffer>;
   exportVideo: (request: {
+    textMeasurements?: import("../../core/textWidth").TextMeasurement[];
     projectPath: string;
     mediaPath: string;
     mode: PreviewSession["mode"];
@@ -39,6 +40,7 @@ export type LyricBridge = {
     { ok: true; outPath: string; assPath: string } | { ok: false; error: string; cancelled?: boolean }
   >;
   exportAss: (request: {
+    textMeasurements?: import("../../core/textWidth").TextMeasurement[];
     projectPath: string;
     mediaPath: string;
     mode: PreviewSession["mode"];

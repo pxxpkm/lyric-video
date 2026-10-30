@@ -6,13 +6,14 @@ import { ShapePanel } from "./ShapePanel";
 import { TimingPanel } from "./TimingPanel";
 import { lyricClockMs, mediaMsForLyric, previewFrame } from "../../core/preview";
 import { mediaSpans, type MotionClip } from "../../core/motion";
-import { timeOfMs, type LyricLine } from "../../core/lyrics";
-import { clampLook, type LyricLook } from "../../core/lyricLook";
+import { applyEdits, timeOfMs, type LyricLine } from "../../core/lyrics";
+import { canvasFont, clampLook, type LyricLook } from "../../core/lyricLook";
 import { timingForProject, timingFromProject } from "../../core/projectTiming";
 import type { TrackTiming } from "../../core/timing";
 import { mediaSrc, type PreviewSession } from "../../shared/preview";
 import { BackIcon, IconButton, PauseIcon, PlayIcon } from "./icons";
 import { SeekBar } from "./SeekBar";
+import { clearTextMeasurements, collectTextMeasurements } from "./textMeasurement";
 
 function activeMedia(video: HTMLVideoElement | null, audio: HTMLAudioElement | null): HTMLMediaElement | null {
   return video ?? audio;
@@ -26,6 +27,7 @@ function ensureChiron(): Promise<void> {
     .then(async (bytes) => {
       const face = new FontFace("Chiron GoRound TC", bytes);
       document.fonts.add(await face.load());
+      clearTextMeasurements();
     })
     .catch(() => undefined);
   return chironLoaded;
@@ -140,7 +142,7 @@ export function Preview({
   }, [saver]);
 
   useEffect(() => {
-    void ensureChiron();
+    void ensureChiron().then(() => kickPaint.current());
   }, []);
 
   useEffect(() => {
@@ -270,7 +272,10 @@ export function Preview({
     void media.play();
   }
 
-  function exportBody() {
+  async function exportBody() {
+    await ensureChiron();
+    await Promise.all([look.font, look.transFont].map((font) => document.fonts.load(canvasFont(look, 64, font))));
+    clearTextMeasurements();
     return {
       projectPath: session.projectPath,
       mediaPath: session.mediaPath,
@@ -281,6 +286,7 @@ export function Preview({
       look,
       motion: clips,
       title: session.title,
+      textMeasurements: collectTextMeasurements(applyEdits(sessionLines(session.lines), timing), look),
     };
   }
 
@@ -288,7 +294,7 @@ export function Preview({
     setExporting(true);
     setExportText("正在寫字幕");
     try {
-      const result = await window.lyric.exportVideo(exportBody());
+      const result = await window.lyric.exportVideo(await exportBody());
       if ("cancelled" in result && result.cancelled) {
         setExportText("");
         return;
@@ -305,7 +311,7 @@ export function Preview({
     setSavingAss(true);
     setExportText("正在寫字幕");
     try {
-      const result = await window.lyric.exportAss(exportBody());
+      const result = await window.lyric.exportAss(await exportBody());
       if ("cancelled" in result && result.cancelled) {
         setExportText("");
         return;

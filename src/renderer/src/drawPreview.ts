@@ -1,4 +1,6 @@
 import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/preview";
+import { horizontalFitPercent } from "../../core/textWidth";
+import { measureTextEm } from "./textMeasurement";
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
 import {
   canvasFont,
@@ -208,7 +210,7 @@ function decorStamp(
   const dots = sampleDecor(preset, mediaMs, span.startMs, span.endMs, decorLayout(frame.text, look.size, upright, origUsed));
   const parts = dots.map(dotStamp);
   if (frame.trans) {
-    const transUsed = fitted(frame.trans, look.transSize, look, upright ? rest.transY : rest.transX, upright);
+    const transUsed = fitted(frame.trans, look.transSize, look, upright ? rest.transY : rest.transX, upright, look.transFont);
     const extra = sampleDecor(preset, mediaMs, span.startMs, span.endMs, decorLayout(frame.trans, look.transSize, upright, transUsed));
     parts.push(...extra.map(dotStamp));
   }
@@ -264,7 +266,7 @@ export function drawPreview(
   const upright = isVerticalFlow(look.flow);
   const rest = restAnchors(clips, frame.key, look);
   const origUsed = frame.text ? fitted(frame.text, look.size, look, upright ? rest.y : rest.x, upright) : 1;
-  const transUsed = frame.trans ? fitted(frame.trans, look.transSize, look, upright ? rest.transY : rest.transX, upright) : 1;
+  const transUsed = frame.trans ? fitted(frame.trans, look.transSize, look, upright ? rest.transY : rest.transX, upright, look.transFont) : 1;
   ctx.save();
   ctx.globalAlpha = placed.opacity;
   const blurPx = lyricBlur(look.soft, look.softBlur);
@@ -470,15 +472,17 @@ function measureBands(
   }
   ctx.font = kept;
   const mainUsed = fitted(frame.text, look.size, look, rest.x, false);
-  const transUsed = frame.trans ? fitted(frame.trans, look.transSize, look, rest.transX, false) : 1;
+  const transUsed = frame.trans ? fitted(frame.trans, look.transSize, look, rest.transX, false, look.transFont) : 1;
   return lyricBands(placed.x * width, placed.y * height, translated.x * width, translated.y * height, fontPx, transRatio(look), {
     main: main * mainUsed,
     trans: trans * transUsed,
   });
 }
 
-function fitted(text: string, size: number, look: LyricLook, anchor: number, vertical: boolean): number {
-  return fitUsed(fitPercent(Array.from(text).length, size, look.tracking, look.outline, anchor, vertical ? playHeight : playWidth, vertical ? look.verticalAnchor : "center"));
+function fitted(text: string, size: number, look: LyricLook, anchor: number, vertical: boolean, font = look.font): number {
+  return fitUsed(vertical
+    ? fitPercent(Array.from(text).length, size, look.tracking, look.outline, anchor, playHeight, look.verticalAnchor)
+    : horizontalFitPercent(text, size, look.tracking, look.outline, anchor, measureTextEm(text, font, look)));
 }
 
 function restAnchors(clips: MotionClip[], key: string, look: LyricLook) {

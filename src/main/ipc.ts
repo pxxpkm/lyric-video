@@ -72,6 +72,9 @@ function exportRequest(value: unknown): ExportRequest | null {
     title: typeof row.title === "string" ? row.title : "",
     outPath: "",
     motion: Array.isArray(row.motion) ? (row.motion as ExportRequest["motion"]) : [],
+    textMeasurements: Array.isArray(row.textMeasurements) ? row.textMeasurements.filter((item): item is import("../core/textWidth").TextMeasurement =>
+      item != null && typeof item === "object" && typeof item.font === "string" && typeof item.text === "string" && typeof item.em === "number" && Number.isFinite(item.em) && item.em > 0,
+    ) : undefined,
   };
 }
 

@@ -11,7 +11,6 @@ import {
   assFontSize,
   defaultLook,
   edgeOutlineAt,
-  fitPercent,
   fitUsed,
   fitWidthTag,
   isVerticalFlow,
@@ -40,6 +39,7 @@ import {
   type MotionClip,
 } from "./motion";
 import { mediaMsForLyric } from "./preview";
+import { horizontalFitPercent, measuredEm, type TextMeasurement } from "./textWidth";
 import { columnGlyphY, columnCenter } from "./lyricLook";
 import { defaultTiming, type TrackTiming } from "./timing";
 
@@ -48,6 +48,7 @@ export function buildKaraokeAss(
   timing: TrackTiming = defaultTiming(),
   look: LyricLook = defaultLook,
   clips: MotionClip[] = [],
+  textMeasurements?: TextMeasurement[],
 ): string {
   const lines = applyEdits(baseLines, timing);
   const events: string[] = [];
@@ -70,7 +71,7 @@ export function buildKaraokeAss(
     } else {
       const wordTimed = pieces.some((piece) => piece.cs != null);
       const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
-      const origFit = fitPercent(Array.from(line.text).length, look.size, look.tracking, look.outline, restX(look, clip), playWidth);
+      const origFit = horizontalFitPercent(line.text, look.size, look.tracking, look.outline, restX(look, clip), measuredEm(textMeasurements, line.text, look.font));
       const lead = clip ? withBlur(assMotion(clip, look, start, end, tint, origFit), look) : place(look, origFit, start, end);
       if (look.showOriginal !== false) {
         events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look, clip?.preset === "edge")}`));
@@ -79,7 +80,7 @@ export function buildKaraokeAss(
       const trans = line.translatedText?.trim();
       if (trans) {
         const at = transAnchorPx(look, clip);
-        const transFit = fitPercent(Array.from(trans).length, look.transSize, look.tracking, look.outline, transRest(look, clip).x, playWidth);
+        const transFit = horizontalFitPercent(trans, look.transSize, look.tracking, look.outline, transRest(look, clip).x, measuredEm(textMeasurements, trans, look.transFont));
         const body = withBlur(
           clip
             ? assTransMotion(clip, look, start, end, clip.preset === "tint" ? tintOverride(look.transColor, look.sungColor, end - start) : "", transFit)
