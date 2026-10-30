@@ -426,7 +426,7 @@ export function applyEdits(src: LyricLine[], timing: TrackTiming): LyricLine[] {
   if (timing.added && timing.added.length > 0) {
     for (const a of timing.added) {
       if (!a.text.trim()) continue;
-      const at = Math.min(MAX_MS, Math.max(0, a.atMs));
+      const at = Math.max(0, a.atMs);
       const id = a.id ? a.id : `t${at}`;
       result.push(
         lyricLine(at, a.text, {
@@ -452,7 +452,7 @@ export function placementMs(prev: number | null, next: number | null, fallbackMs
 }
 
 export function setEffectiveTime(t: TrackTiming, line: LyricLine, atMs: number): TrackTiming {
-  atMs = Math.min(MAX_MS, Math.max(0, atMs));
+  atMs = Math.max(0, atMs);
   const key = lineKey(line);
   if (isAddedKey(key)) {
     const id = addedId(key);
