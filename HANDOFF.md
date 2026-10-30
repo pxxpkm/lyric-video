@@ -1,5 +1,11 @@
 # 交接
 
+## 2026-10-30 0.95 已公開發佈 GitHub
+
+已依使用者「上傳 GitHub」要求提交及推送0.95源碼：51f7516f26cd50c87085f2399ffd30543626fd32。Release已公開（非草稿），tag v0.95.0指向此產品提交：https://github.com/pxxpkm/lyric-video/releases/tag/v0.95.0，Release ID 428969468。
+
+附件只有 LyricVideo-Setup-0.95.0.exe（122204692 bytes，SHA256 e5e827c547810082a6dc628b1b5bec88eddb5d23c16b9729b93ba395da198826）及 SHA256SUMS.txt（95 bytes，SHA256 0b11f031f9c3b184e99f1b0b3aa65b42c56025ce34fd84ba52e8d56b82765688），GitHub端state=uploaded及digest已與本機核對。原有帶空格本機檔名保留，公開下載採無空格名稱。Release說明列外部工具需求、未簽署及個人資料不隨包分發。沒有上傳Cookie／影音／exass，沒有自動更新。367測試／隔離打包版驗證通過；沒有另行聲稱用家親自安裝驗收。當前沒有進行中的新功能，下面未提交／待發佈描述均屬歷史。
+
 ## 2026-10-30 使用者授權上傳0.95
 
 用家在0.95交付後明確要求「上傳 GitHub」，依此授權提交產品及建立v0.95.0 Release，不冒稱其已親自安裝驗收。README內附說明改正式Release位置後重建，公開附件 LyricVideo-Setup-0.95.0.exe（122204692 bytes），SHA256 e5e827c547810082a6dc628b1b5bec88eddb5d23c16b9729b93ba395da198826；SHA256SUMS.txt已對應公開檔名。舊包hash由本段取代。

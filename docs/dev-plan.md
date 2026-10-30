@@ -6,6 +6,8 @@
 
 ## 現在做到哪
 
+**0.95 已發佈 GitHub（2026-10-30）**：依使用者要求提交源碼51f7516並推送origin/master，正式Release [v0.95.0](https://github.com/pxxpkm/lyric-video/releases/tag/v0.95.0)已公開。附件為122204692 bytes安裝檔及SHA256SUMS.txt，兩者GitHub端雜湊已核對一致，tag指向產品提交。不含個人資料。367測試及隔離打包版驗證已過，未另聲稱用家親自安裝驗收；沒有新產品步驟。
+
 **0.95 打包及 Cookies 設定（已交付，使用者授權發佈，2026-10-30）**：使用者在交付安裝包後明確要求「上傳 GitHub」，依此授權提交0.95及建立Release，不將代理驗證冒稱為用家親自安裝。45檔367項測試、TypeScript、dist及隔離打包版Cookie／匯出核對通過。公開附件 LyricVideo-Setup-0.95.0.exe 為122204692 bytes，SHA256 e5e827c547810082a6dc628b1b5bec88eddb5d23c16b9729b93ba395da198826；連同SHA256SUMS.txt發佈至v0.95.0。沿用外部工具依賴、未簽署、不含個人資料，結果見本輪Git及Release工具核對。
 
 **2026-10-30 GitHub 同步**：使用者要求推送。fetch 確認遠端無新增、本機領先 5 個已驗收修復提交；本輪同步 R04 344a942、R06 a4652dc、英文 231a5d5、R07 bfada49、R10 e8ba941 及本次文件紀錄到 origin/master。結果以 git push 與分支狀態為準；以下「未推送」是各步完成當時狀態。沒有新產品步驟，不打包或改版本。
@@ -105,6 +107,12 @@ M0 至 M8、0.6 至 0.15，以及後面的修正，都已完成並推上 GitHub�
 M8 已放進 beta 0.5。你沒有親口說「M8 可以」。不要為了補這句話再提交一次。
 
 ## 過程紀錄
+
+### 2026-10-30 0.95 GitHub Release 發佈回執
+
+- 產品提交51f7516f26cd50c87085f2399ffd30543626fd32已推送origin/master。Release ID 428969468，tag v0.95.0，已由草稿轉公開並設最新版本，網址 https://github.com/pxxpkm/lyric-video/releases/tag/v0.95.0。
+- 已逐項核對uploaded狀態、檔案大小及GitHub提供的digest：LyricVideo-Setup-0.95.0.exe為122204692 bytes／SHA256 e5e827c547810082a6dc628b1b5bec88eddb5d23c16b9729b93ba395da198826；SHA256SUMS.txt為95 bytes／SHA256 0b11f031f9c3b184e99f1b0b3aa65b42c56025ce34fd84ba52e8d56b82765688。二進位沒有加進Git；studio-data、Cookies、tools、exass保持排除。
+- 此回執只更新文件，無產品或成品改動；不另開里程碑，也沒有把代理煙霧測試說成人手安裝驗收。
 
 ### 2026-10-30 使用者要求上傳0.95至GitHub
 
