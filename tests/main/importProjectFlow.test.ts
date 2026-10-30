@@ -25,6 +25,7 @@ async function fixture() {
     downloadUrl: vi.fn(async () => { throw new Error("unexpected download"); }),
     matchProject: vi.fn(resumeProject),
     resumeProject: vi.fn(resumeProject),
+    findSourceProjects: vi.fn(async () => []),
   };
   return { flow: new ImportProjectFlow(), api };
 }
@@ -32,7 +33,7 @@ async function fixture() {
 it("建立→編輯→返回→再按主按鈕：重開原專案，不寫檔或重新配詞", async () => {
   const { flow, api } = await fixture();
   const first = await flow.open(source, request, api);
-  if ("ok" in first) throw new Error(first.error);
+  if (!("session" in first)) throw new Error("Expected project");
   const path = first.session.projectPath;
   await updateProject(path, (project) => {
     project.timing.offsetMs = 1250;
@@ -42,7 +43,7 @@ it("建立→編輯→返回→再按主按鈕：重開原專案，不寫檔或�
   });
   const before = await readFile(path, "utf8");
   const reopened = await flow.open(source, request, api);
-  if ("ok" in reopened) throw new Error(reopened.error);
+  if (!("session" in reopened)) throw new Error("Expected project");
   expect(reopened.session.projectPath).toBe(path);
   expect(reopened.session.look.size).toBe(77);
   expect(reopened.session.timing.offsetMs).toBe(1250);
@@ -78,12 +79,12 @@ it("首次配詞失敗後重試仍開啟已建檔案，連按不建立重複專�
 it("明確改匯入設定才另建，舊專案維持原內容", async () => {
   const { flow, api } = await fixture();
   const first = await flow.open(source, request, api);
-  if ("ok" in first) throw new Error(first.error);
+  if (!("session" in first)) throw new Error("Expected project");
   const before = await readFile(first.session.projectPath, "utf8");
   const changed = { ...request, mode: "audio" as const };
   expect(flow.existingPath(source, changed)).toBeNull();
   const next = await flow.open(source, changed, api);
-  if ("ok" in next) throw new Error(next.error);
+  if (!("session" in next)) throw new Error("Expected project");
   expect(next.session.projectPath).not.toBe(first.session.projectPath);
   expect(await readFile(first.session.projectPath, "utf8")).toBe(before);
   expect(api.saveFile).toHaveBeenCalledTimes(2);

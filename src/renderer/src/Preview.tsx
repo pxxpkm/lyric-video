@@ -1,12 +1,13 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
 import { ProjectSaver, registerActiveSave, type SaveStatus } from "./projectSaver";
-import { drawPreview, hitsCurrentLyric, mediaKeepsPainting, previewPaintKey, readoutFrame, sessionLines, shouldPaintPreview } from "./drawPreview";
+import { alignLyricPositions, moveLyricPositions, restoreLyricPositions, type PositionTarget, type PositionLine } from "../../core/positionEditing";
+import { drawPreview, mediaKeepsPainting, previewPaintKey, readoutFrame, sessionLines, shouldPaintPreview } from "./drawPreview";
 import { ShapePanel } from "./ShapePanel";
 import { TimingPanel } from "./TimingPanel";
 import { lyricClockMs, mediaMsForLyric, previewFrame } from "../../core/preview";
-import { mediaSpans, placeLineClip, placeTransClip, type MotionClip } from "../../core/motion";
+import { mediaSpans, type MotionClip } from "../../core/motion";
 import { timeOfMs, type LyricLine } from "../../core/lyrics";
-import { clampLook, moveLook, type LyricLook } from "../../core/lyricLook";
+import { clampLook, type LyricLook } from "../../core/lyricLook";
 import { timingForProject, timingFromProject } from "../../core/projectTiming";
 import type { TrackTiming } from "../../core/timing";
 import { mediaSrc, type PreviewSession } from "../../shared/preview";
@@ -53,13 +54,10 @@ export function Preview({
   const lookRef = useRef(look);
   const [clips, setClips] = useState<MotionClip[]>(() => session.motion ?? []);
   const clipsRef = useRef(clips);
-  const allOnRef = useRef(false);
-  const dragRef = useRef<
-    | { id: number; kind: "song" | "all-orig" | "all-trans"; x: number; y: number; origin: LyricLook }
-    | { id: number; kind: "orig"; key: string; text: string; startMs: number; endMs: number }
-    | { id: number; kind: "trans"; key: string; text: string; startMs: number; endMs: number }
-    | null
-  >(null);
+  const [dragScope, setDragScope] = useState<"song" | "line">("song");
+  const [dragTarget, setDragTarget] = useState<PositionTarget>("orig");
+  const [positionUndo, setPositionUndo] = useState<{ look: LyricLook; clips: MotionClip[]; target: PositionTarget } | null>(null);
+  const dragRef = useRef<{ id: number; scope: "song" | "line"; target: PositionTarget; x: number; y: number; origin: LyricLook; clips: MotionClip[]; line: PositionLine | null } | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [pick, setPick] = useState(0);
   const [pane, setPane] = useState<"text" | "shape">("text");
@@ -124,6 +122,7 @@ export function Preview({
   }, [session]);
 
   useEffect(() => window.lyric.onExportProgress(setExportText), []);
+  useEffect(() => { if (look.showOriginal === false && dragTarget === "orig") setDragTarget("trans"); }, [look.showOriginal, dragTarget]);
 
   useEffect(() => saver.subscribe(setSaveStatus), [saver]);
   useLayoutEffect(() => {
@@ -327,38 +326,16 @@ export function Preview({
   function beginDrag(event: PointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.setPointerCapture(event.pointerId);
-    const rect = canvas.getBoundingClientRect();
     const media = activeMedia(videoRef.current, audioRef.current);
     const mediaMs = media ? media.currentTime * 1000 : 0;
-    const hit =
-      rect.width >= 2 && rect.height >= 2
-        ? hitsCurrentLyric(canvas, linesRef.current, mediaMs, timingRef.current, lookRef.current, clipsRef.current, {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-          })
-        : null;
-    if (hit && allOnRef.current) {
-      dragRef.current = {
-        id: event.pointerId,
-        kind: hit === "orig" ? "all-orig" : "all-trans",
-        x: event.clientX,
-        y: event.clientY,
-        origin: lookRef.current,
-      };
-      return;
-    }
-    if (hit) {
-      const lyricMs = lyricClockMs(mediaMs, timingRef.current.offsetMs, timingRef.current.rate);
-      const frame = previewFrame(linesRef.current, lyricMs, timingRef.current);
-      const span = frame.key ? mediaSpans(linesRef.current, timingRef.current).get(frame.key) : undefined;
-      if (frame.key && span) {
-        dragRef.current = { id: event.pointerId, kind: hit, key: frame.key, text: frame.text, startMs: span.startMs, endMs: span.endMs };
-        chooseLine(frame.key);
-        return;
-      }
-    }
-    dragRef.current = { id: event.pointerId, kind: "song", x: event.clientX, y: event.clientY, origin: lookRef.current };
+    const frame = readoutFrame(linesRef.current, mediaMs, timingRef.current);
+    const span = frame.key ? mediaSpans(linesRef.current, timingRef.current).get(frame.key) : undefined;
+    const line = frame.key && span ? { key: frame.key, text: frame.text, startMs: span.startMs, endMs: span.endMs } : null;
+    if (dragScope === "line" && !line) return;
+    canvas.setPointerCapture(event.pointerId);
+    if (dragScope === "line" && media) media.pause();
+    if (line && dragScope === "line") chooseLine(line.key);
+    dragRef.current = { id: event.pointerId, scope: dragScope, target: dragTarget, x: event.clientX, y: event.clientY, origin: lookRef.current, clips: clipsRef.current, line };
   }
 
   function moveLyrics(event: PointerEvent<HTMLCanvasElement>) {
@@ -367,28 +344,22 @@ export function Preview({
     if (!drag || drag.id !== event.pointerId || !canvas) return;
     const rect = canvas.getBoundingClientRect();
     if (rect.width < 2 || rect.height < 2) return;
-    if (drag.kind === "orig" || drag.kind === "trans") {
-      const x = (event.clientX - rect.left) / rect.width;
-      const y = (event.clientY - rect.top) / rect.height;
-      const next =
-        drag.kind === "orig"
-          ? placeLineClip(clipsRef.current, drag.key, drag.text, drag.startMs, drag.endMs, x, y, lookRef.current)
-          : placeTransClip(clipsRef.current, drag.key, drag.text, drag.startMs, drag.endMs, x, y, lookRef.current);
-      clipsRef.current = next;
-      setClips(next);
-      kickPaint.current();
-      return;
-    }
-    const dx = (event.clientX - drag.x) / rect.width;
-    const dy = (event.clientY - drag.y) / rect.height;
-    const nextLook =
-      drag.kind === "all-orig"
-        ? clampLook({ ...drag.origin, x: drag.origin.x + dx, y: drag.origin.y + dy })
-        : drag.kind === "all-trans"
-          ? clampLook({ ...drag.origin, transX: drag.origin.transX + dx, transY: drag.origin.transY + dy })
-          : moveLook(drag.origin, dx, dy);
-    lookRef.current = nextLook;
-    setLook(nextLook);
+    const next = moveLyricPositions(drag.origin, drag.clips, drag.scope, drag.target, drag.line, (event.clientX - drag.x) / rect.width, (event.clientY - drag.y) / rect.height);
+    lookRef.current = next.look;
+    clipsRef.current = next.clips;
+    setLook(next.look);
+    setClips(next.clips);
+    kickPaint.current();
+  }
+
+  function alignPositions() {
+    const key = selectedKey;
+    setPositionUndo({ look: lookRef.current, clips: clipsRef.current, target: dragTarget });
+    const next = alignLyricPositions(lookRef.current, clipsRef.current, dragTarget, key || undefined);
+    lookRef.current = next.look;
+    clipsRef.current = next.clips;
+    setLook(next.look);
+    setClips(next.clips);
     kickPaint.current();
   }
 
@@ -419,6 +390,19 @@ export function Preview({
       {leaveError ? <p role="alert">{leaveError}</p> : null}
       <div className="studio-body" inert={leaving}>
         <section className="stage-col">
+          <div className="row">
+            <label>拖動範圍<select value={dragScope} onChange={(event) => setDragScope(event.target.value === "line" ? "line" : "song")}><option value="song">成首排版</option><option value="line">只改這句</option></select></label>
+            <label>拖動對象<select value={dragTarget} onChange={(event) => setDragTarget(event.target.value as PositionTarget)}><option value="orig" disabled={look.showOriginal === false}>原文</option><option value="trans">譯文</option><option value="both">原文及譯文</option></select></label>
+            <button disabled={!hasLyrics} onClick={alignPositions}>將選定句位置套用到成首</button>
+            <button disabled={!positionUndo} onClick={() => {
+              if (!positionUndo) return;
+              const restored = restoreLyricPositions(lookRef.current, clipsRef.current, positionUndo, positionUndo.target);
+              lookRef.current = restored.look; clipsRef.current = restored.clips;
+              setLook(restored.look); setClips(restored.clips); setPositionUndo(null); kickPaint.current();
+            }}>撤回統一位置</button>
+            <button aria-pressed={look.showOriginal === false} onClick={() => { const next = { ...lookRef.current, showOriginal: lookRef.current.showOriginal === false }; lookRef.current = next; setLook(next); }}>{look.showOriginal === false ? "顯示原文" : "隱藏原文"}</button>
+          </div>
+          <p className="meta">先用成首排版定位，再切到只改這句處理例外。拖空白亦只影響已選對象及範圍。統一位置只取代位置偏移，保留字體及效果；可撤回。未選句時以成首位置統一。</p>
           <div className="stage-fit">
             <div className="stage">
               {session.mode === "video" ? (
@@ -537,9 +521,6 @@ export function Preview({
                 const clamped = clampLook(next);
                 lookRef.current = clamped;
                 setLook(clamped);
-              }}
-              onAllChange={(on) => {
-                allOnRef.current = on;
               }}
             />
           </div>

@@ -21,3 +21,17 @@ export type SaveRequest = {
 export type SaveResult =
   | { ok: true; projectPath: string; mediaPath: string }
   | { ok: false; error: string };
+
+export type ImportSource = { kind: "youtube"; url: string } | { kind: "file"; path: string };
+export type SavedSourceProject = {
+  durationMs: number;
+  projectPath: string;
+  title: string;
+  artist: string;
+  modified: string;
+  mode: "video" | "audio";
+  lyricCount: number;
+  offsetMs: number;
+  fontSize: number;
+  mediaAvailable: boolean;
+};

@@ -5,6 +5,7 @@ import type { PreviewSession } from "../../shared/preview";
 type Fields = { lockTitle: boolean; lockArtist: boolean; title: string; artist: string };
 
 export type LyricBridge = {
+  findSourceProjects: (source: import("../../shared/import").ImportSource) => Promise<import("../../shared/import").SavedSourceProject[]>;
   onCloseRequest: (callback: () => Promise<boolean>) => () => void;
   listCache: () => Promise<import("../../shared/cache").CacheEntry[]>;
   trashCache: (path: string) => Promise<string>;
@@ -16,7 +17,7 @@ export type LyricBridge = {
   saveFile: (filePath: string, request: SaveRequest) => Promise<SaveResult>;
   createTestClip: () => Promise<PreviewSession>;
   loadProject: (projectPath: string) => Promise<PreviewSession>;
-  resumeProject: (projectPath: string) => Promise<MatchResult>;
+  resumeProject: (projectPath: string) => Promise<MatchResult | { ok: false; error: string }>;
   saveTiming: (
     projectPath: string,
     timing: PreviewSession["timing"],

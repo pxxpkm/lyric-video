@@ -73,6 +73,8 @@ export const projectSchema = z.object({
     )
     .default([]),
   style: z.object({
+    showOriginal: z.boolean().default(true),
+    verticalAnchor: z.enum(["first", "center"]).default("center"),
     showTrans: z.boolean(),
     karaoke: z.boolean(),
     font: z.string().default(defaultLook.font),
@@ -190,6 +192,8 @@ export function exampleProject(): Project {
       added: [],
     },
     style: {
+      showOriginal: true,
+      verticalAnchor: "first",
       showTrans: true,
       karaoke: true,
       font: defaultLook.font,

@@ -4,6 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cacheEntry, listCache, trashCacheEntries } from "../../src/main/cacheLibrary";
 import { recordDownloadFiles, RECEIPT } from "../../src/main/downloadReceipt";
+import { exampleProject } from "../../src/core/project";
+import { saveProject, updateProject } from "../../src/main/projectFile";
+import { resumeProject } from "../../src/main/matchLyrics";
+import { readFile } from "node:fs/promises";
 
 const roots: string[] = [];
 
@@ -76,6 +80,35 @@ it("未完成下載亦列出；沒有專案或專案損壞不影響列檔", asyn
   expect(rows).toHaveLength(2);
   expect(rows.every((row) => row.projects.length === 0)).toBe(true);
   expect(rows.every((row) => !row.clearable)).toBe(true);
+  expect(rows.every((row) => row.projectLinks.length === 0)).toBe(true);
+});
+
+it("共用素材列出各自可編輯專案，從連結開最新設定且不改寫檔案", async () => {
+  const { root, folder, path } = await fixture();
+  const firstPath = join(folder, "project.json");
+  const secondPath = join(root, "yt-second", "project.json");
+  const first = exampleProject();
+  first.identity.title = "版本一";
+  first.source = { kind: "youtube", url: "https://youtu.be/BFSmN6fQ_04", mediaPath: path, mode: "video" };
+  await saveProject(firstPath, first);
+  const second = structuredClone(first);
+  second.identity.title = "版本二";
+  second.style.size = 88;
+  await saveProject(secondPath, second);
+  const rows = await listCache(root);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].projectLinks).toEqual(expect.arrayContaining([
+    { projectPath: firstPath, label: "版本一（yt-old）" },
+    { projectPath: secondPath, label: "版本二（yt-second）" },
+  ]));
+  await updateProject(firstPath, (project) => { project.style.size = 77; project.timing.offsetMs = 1500; return project; });
+  const before = await readFile(firstPath, "utf8");
+  const link = rows[0].projectLinks.find((project) => project.projectPath === firstPath)!;
+  const opened = await resumeProject(link.projectPath);
+  expect(opened.session.look.size).toBe(77);
+  expect(opened.session.timing.offsetMs).toBe(1500);
+  expect((await resumeProject(secondPath)).session.look.size).toBe(88);
+  expect(await readFile(firstPath, "utf8")).toBe(before);
 });
 
 it("舊專案只認明確來源，source.final.mp4 成片保留且批次拒絕清除", async () => {

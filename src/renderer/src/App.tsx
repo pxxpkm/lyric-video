@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ImportDraft, SaveRequest } from "../../shared/import";
+import type { ImportDraft, SaveRequest, ImportSource, SavedSourceProject } from "../../shared/import";
 import type { MatchResult, PickList } from "../../shared/pick";
 import type { PreviewSession } from "../../shared/preview";
 import type { QueueJob } from "./lyric";
@@ -21,7 +21,10 @@ function formatDuration(ms: number): string {
 
 export function App() {
   const [importFlow] = useState(() => new ImportProjectFlow());
+  const [existingChoices, setExistingChoices] = useState<{ source: ImportSource; request: SaveRequest; projects: SavedSourceProject[] } | null>(null);
+  const [selectedProject, setSelectedProject] = useState("");
   const [showCache, setShowCache] = useState(false);
+  const [returnToCache, setReturnToCache] = useState(false);
   const [status, setStatus] = useState("尚未匯入");
   const [url, setUrl] = useState("");
   const [source, setSource] = useState<Source>(null);
@@ -63,6 +66,7 @@ export function App() {
 
   function applyDraft(next: ImportDraft, nextSource: Source) {
     importFlow.reset();
+    setExistingChoices(null);
     setSource(nextSource);
     setDraft(next);
     setTitle(next.title);
@@ -78,6 +82,17 @@ export function App() {
     setError("");
     setStatus("正在讀取標題");
     try {
+      const nextSource = { kind: "youtube" as const, url: url.trim() };
+      const projects = await window.lyric.findSourceProjects(nextSource);
+      if (projects.length) {
+        const latest = projects[0];
+        const nextDraft: ImportDraft = { title: latest.title, artist: latest.artist, durationMs: latest.durationMs, mode: latest.mode, useDuration: latest.durationMs > 0, note: "已找到本機專案，繼續編輯不需要重新下載或配詞。" };
+        applyDraft(nextDraft, nextSource);
+        setExistingChoices({ source: nextSource, request: { title: nextDraft.title, artist: nextDraft.artist, durationMs: nextDraft.durationMs, mode: nextDraft.mode, lockTitle, lockArtist }, projects });
+        setSelectedProject(latest.projectPath);
+        setStatus("找到已保存專案，請選擇繼續編輯或明確另建。");
+        return;
+      }
       const result = await window.lyric.probeUrl(url, fields());
       if (!result.ok) {
         setError(result.error);
@@ -131,13 +146,20 @@ export function App() {
     };
   }
 
-  async function save() {
+  const currentChoices = existingChoices && source && JSON.stringify([existingChoices.source, existingChoices.request]) === JSON.stringify([source, request()]) ? existingChoices : null;
+
+  async function save(createNew = false) {
     if (!source) return;
     setBusy(true);
     setError("");
     try {
       setStatus(importFlow.existingPath(source, request()) ? "正在讀取已保存專案" : "正在建立專案及搜尋歌詞");
-      showMatch(await importFlow.open(source, request(), window.lyric));
+      const found = await importFlow.open(source, request(), window.lyric, createNew);
+      if (!("ok" in found) && found.kind === "existing-projects") {
+        setExistingChoices({ source, request: request(), projects: found.projects });
+        setSelectedProject(found.projects[0].projectPath);
+        setStatus("找到同一來源的已保存專案，請選擇繼續編輯或明確另建。");
+      } else showMatch(found);
     } catch {
       setError("未能開啟或建立專案，請再試；已有專案不會重新初始化。");
     } finally {
@@ -164,9 +186,11 @@ export function App() {
     if (!found) return;
     if ("ok" in found) {
       setError(found.error);
+      setStatus("未能開啟專案，原有設定仍保留。");
       return;
     }
     setError("");
+    setExistingChoices(null);
     setSession(found.session);
     setSavedPath(found.session.projectPath);
     if (found.kind === "pick") {
@@ -180,13 +204,19 @@ export function App() {
     setStatus(found.session.lines.length > 0 ? "可預覽" : "尚未有歌詞");
   }
 
+  function returnFromEditor() {
+    setScreen("import");
+    if (returnToCache) setShowCache(true);
+    setReturnToCache(false);
+  }
+
   if (screen === "preview" && session) {
     return (
       <Preview
         key={session.projectPath}
         session={session}
         showTrans={showTrans}
-        onBack={() => setScreen("import")}
+        onBack={returnFromEditor}
         onPick={async () => {
           setBusy(true);
           setError("");
@@ -204,7 +234,7 @@ export function App() {
         pick={pick}
         busy={busy}
         error={error}
-        onBack={() => setScreen("import")}
+        onBack={returnFromEditor}
         onSkip={() => {
           setScreen("preview");
           setStatus(session.lines.length > 0 ? "可預覽" : "尚未有歌詞");
@@ -229,7 +259,13 @@ export function App() {
     );
   }
 
-  if (showCache) return <CacheLibrary onClose={() => setShowCache(false)} />;
+  if (showCache) return <CacheLibrary onClose={() => setShowCache(false)} onOpenProject={async (path) => {
+    const found = await window.lyric.resumeProject(path);
+    if ("ok" in found) throw new Error(found.error);
+    showMatch(found);
+    setReturnToCache(true);
+    setShowCache(false);
+  }} />;
 
   return (
     <main>
@@ -247,7 +283,7 @@ export function App() {
           />
         </label>
         <button type="button" disabled={busy || !url.trim()} onClick={() => void readUrl()}>
-          讀取標題
+          讀取／找回專案
         </button>
         <div
           className="drop"
@@ -289,10 +325,32 @@ export function App() {
             <option value="audio">只要音訊</option>
           </select>
         </label>
-        <button type="button" disabled={busy || !source} onClick={() => void save()}>
-          {source && importFlow.existingPath(source, request()) ? "繼續編輯專案" : importFlow.hasCreated ? "建立另一份專案" : source?.kind === "youtube" ? "下載並建立專案" : "建立專案"}
+        <button type="button" disabled={busy || !source || !!currentChoices} onClick={() => void save()}>
+          {source && importFlow.existingPath(source, request()) ? "繼續編輯專案" : "開啟或建立專案"}
         </button>
-        {importFlow.hasCreated ? <p className="meta">相同匯入資料會開啟已保存的專案。更改歌名、歌手或影音模式後，建立的是另一份使用初始設定的專案。</p> : null}
+        <p className="meta">會先找回同一來源的已保存專案；另建新專案才使用初始設定，原專案保留。</p>
+        {currentChoices ? <section className="card" aria-label="選擇已保存專案">
+          <h2>找到已保存專案</h2>
+          <p>如之前已編輯過，請選擇原本嗰份。按最近保存時間排序，列出字級及延遲方便辨認；開啟不會重新配詞或重設。</p>
+          <label>專案<select disabled={busy} value={selectedProject} onChange={(event) => setSelectedProject(event.target.value)}>
+            {currentChoices.projects.map((project) => <option key={project.projectPath} value={project.projectPath}>
+              {project.title || "未命名"} · {new Date(project.modified).toLocaleString("zh-HK")} · {project.mode === "video" ? "影片" : "音訊"} · 字級 {project.fontSize} · 延遲 {project.offsetMs}ms · {project.projectPath.split(/[\\/]/).slice(-2, -1)[0]}
+            </option>)}
+          </select></label>
+          {currentChoices.projects.filter((project) => project.projectPath === selectedProject).map((project) => <p className="meta" key={project.projectPath}>專案：{project.projectPath}；歌詞 {project.lyricCount} 句。{project.mediaAvailable ? "" : "來源檔遺失，設定仍在；繼續編輯時會先找本機副本，YouTube 來源無副本就重新下載。"}</p>)}
+          <button disabled={busy || !selectedProject} onClick={async () => {
+            if (!currentChoices.projects.some((project) => project.projectPath === selectedProject)) return;
+            setBusy(true); setError("");
+            try {
+              const found = await importFlow.continueWith(currentChoices.source, currentChoices.request, selectedProject, window.lyric);
+              if (!("ok" in found) && found.kind === "existing-projects") return;
+              showMatch(found);
+            } catch { setError("讀不到選定專案，沒有另建或重設。請再試或選另一份。"); }
+            finally { setBusy(false); }
+          }}>繼續編輯選定專案</button>{" "}
+          <button disabled={busy} onClick={() => void save(true)}>另建新專案（初始設定）</button>{" "}
+          <button disabled={busy} onClick={() => setExistingChoices(null)}>取消</button>
+        </section> : null}
         <button
           type="button"
           disabled={busy || !savedPath}
@@ -354,7 +412,7 @@ export function App() {
               className="queue-item"
               disabled={job.status !== "ready"}
               onClick={() => {
-                void window.lyric.openJob(job.id).then(showMatch).catch(() => setError("讀不到最新專案，請確認檔案仍在，然後再試。"));
+                void window.lyric.openJob(job.id).then(showMatch).catch((error: unknown) => setError(error instanceof Error ? error.message : "讀不到最新專案，請確認檔案仍在，然後再試。"));
               }}
             >
               <span>

@@ -4,6 +4,7 @@ export type CacheEntry = {
   bytes: number;
   modified: string;
   projects: string[];
+  projectLinks: { projectPath: string; label: string }[];
   clearable: boolean;
   reason: string;
 };

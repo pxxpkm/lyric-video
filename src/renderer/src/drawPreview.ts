@@ -2,6 +2,8 @@ import { lyricClockMs, previewFrame, type PreviewFrame } from "../../core/previe
 import { applyEdits, lyricLine, type LyricLine } from "../../core/lyrics";
 import {
   canvasFont,
+  columnGlyphY,
+  columnCenter,
   defaultLook,
   edgeOutlineAt,
   fitPercent,
@@ -67,16 +69,17 @@ export function hitsCurrentLyric(
   const restMs = mediaSpans(shown, timing).get(frame.key)?.endMs ?? mediaMs;
   const rest = restMs === mediaMs ? null : measureBands(ctx, shown, frame, restMs, timing, look, clips, width, height);
   ctx.restore();
-  return hitBands(point, visible) ?? hitBands(point, rest);
+  return hitBands(point, visible, look.showOriginal !== false) ?? hitBands(point, rest, look.showOriginal !== false);
 }
 
 function hitBands(
   point: { x: number; y: number },
   bands: { main: LyricBand; trans: LyricBand | null } | null,
+  showOriginal = true,
 ): "orig" | "trans" | null {
   if (!bands) return null;
   if (pointOnBands(point, [bands.trans])) return "trans";
-  if (pointOnBands(point, [bands.main])) return "orig";
+  if (showOriginal && pointOnBands(point, [bands.main])) return "orig";
   return null;
 }
 
@@ -165,6 +168,8 @@ function lookStamp(look: LyricLook): string {
     look.transSize,
     look.transColor,
     look.flow,
+    look.verticalAnchor,
+    look.showOriginal,
     bucket(look.x, 1 / 1080),
     bucket(look.y, 1 / 1080),
     bucket(look.transX, 1 / 1080),
@@ -266,7 +271,7 @@ export function drawPreview(
   if (frame.text && blurPx > 0) ctx.filter = `blur(${blurPx * scale}px)`;
   if (!frame.text) {
     ctx.font = canvasFont(look, Math.max(16, fontPx * 0.7));
-    paint(ctx, "尚未有歌詞", x, y, look.color, look.outlineColor, edge);
+    if (look.showOriginal !== false) paint(ctx, "尚未有歌詞", x, y, look.color, look.outlineColor, edge);
   } else if (upright) {
     const words = shown[frame.index]?.words ?? null;
     const glyphs = mainGlyphs(words, frame, look);
@@ -285,7 +290,7 @@ export function drawPreview(
     );
     scaleColumn(bands.main, origUsed);
     scaleColumn(bands.trans, transUsed);
-    drawColumn(ctx, glyphs, bands.main, look, fontPx * origUsed, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint, look.outlineColor, edged);
+    if (look.showOriginal !== false) drawColumn(ctx, glyphs, bands.main, look, fontPx * origUsed, edge, placed, hasKaraoke(words, frame) ? 0 : placed.tint, look.outlineColor, edged);
     if (frame.trans && bands.trans) {
       drawColumn(
         ctx,
@@ -306,7 +311,7 @@ export function drawPreview(
     const words = line?.words ?? null;
     const gap = trackPx(look, scale);
     const bands = measureBands(ctx, shown, frame, mediaMs, timing, look, clips, width, height);
-    withPose(ctx, x, y, placed, () => {
+    if (look.showOriginal !== false) withPose(ctx, x, y, placed, () => {
       // 量度譯文寬度會改 ctx.font。成句原文唔會自己設字體，要先設回原文。
       ctx.font = canvasFont(look, fontPx);
       squeeze(ctx, x, y, origUsed, () => {
@@ -353,12 +358,14 @@ export function drawPreview(
   const span = mediaSpans(shown, timing).get(frame.key);
   const preset = clips.find((clip) => clip.lineKey && clip.lineKey === frame.key)?.preset;
   if (frame.text && span && isDecor(preset)) {
-    drawDecor(ctx, x, y, preset, mediaMs, span.startMs, span.endMs, scale, look.color, look, decorLayout(frame.text, look.size, upright, origUsed));
+    const origDecorY = upright ? columnCenter(y, Array.from(frame.text).length, (fontPx + trackPx(look, scale)) * origUsed, look.verticalAnchor) : y;
+    const transDecorY = upright ? columnCenter(transY, Array.from(frame.trans).length, (transPx + trackPx(look, scale)) * transUsed, look.verticalAnchor) : transY;
+    if (look.showOriginal !== false) drawDecor(ctx, x, origDecorY, preset, mediaMs, span.startMs, span.endMs, scale, look.color, look, decorLayout(frame.text, look.size, upright, origUsed));
     if (frame.trans) {
       drawDecor(
         ctx,
         transX,
-        transY,
+        transDecorY,
         preset,
         mediaMs,
         span.startMs,
@@ -447,6 +454,8 @@ function measureBands(
     );
     scaleColumn(columns.main, fitted(frame.text, look.size, look, rest.y, true));
     if (columns.trans) scaleColumn(columns.trans, fitted(frame.trans, look.transSize, look, rest.transY, true));
+    columns.main.y = columnCenter(columns.main.y, Math.max(1, mainGlyphs(shown[frame.index]?.words ?? null, frame, look).length), columns.main.h / Math.max(1, mainGlyphs(shown[frame.index]?.words ?? null, frame, look).length), look.verticalAnchor);
+    if (columns.trans) columns.trans.y = columnCenter(columns.trans.y, Array.from(frame.trans).length, columns.trans.h / Array.from(frame.trans).length, look.verticalAnchor);
     return columns;
   }
   const words = shown[frame.index]?.words ?? null;
@@ -469,7 +478,7 @@ function measureBands(
 }
 
 function fitted(text: string, size: number, look: LyricLook, anchor: number, vertical: boolean): number {
-  return fitUsed(fitPercent(Array.from(text).length, size, look.tracking, look.outline, anchor, vertical ? playHeight : playWidth));
+  return fitUsed(fitPercent(Array.from(text).length, size, look.tracking, look.outline, anchor, vertical ? playHeight : playWidth, vertical ? look.verticalAnchor : "center"));
 }
 
 function restAnchors(clips: MotionClip[], key: string, look: LyricLook) {
@@ -547,7 +556,7 @@ function drawColumn(
 ): void {
   if (glyphs.length === 0) return;
   const step = band.h / glyphs.length;
-  const top = band.y - band.h / 2 + step / 2;
+  const top = columnGlyphY(band.y, glyphs.length, step, 0, look.verticalAnchor);
   ctx.font = canvasFont(look, fontPx, fontId);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";

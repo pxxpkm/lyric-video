@@ -18,6 +18,8 @@ import { timingFromProject } from "../core/projectTiming";
 import type { StoredTiming } from "../shared/preview";
 import type { SaveRequest } from "../shared/import";
 import { waitProjectWrites } from "./projectFile";
+import { findSourceProjects } from "./sourceProjects";
+import { ensureProjectMedia, mediaRecoveryBusy } from "./projectMedia";
 
 let exportBusy = false;
 
@@ -74,12 +76,22 @@ function exportRequest(value: unknown): ExportRequest | null {
 }
 
 export function registerImportIpc(): void {
-  ipcMain.handle("preview:resume", (_event, projectPath: unknown) => {
+  ipcMain.handle("import:find-projects", (_event, source: unknown) => {
+    if (!source || typeof source !== "object") throw new Error("沒有來源");
+    const row = source as Record<string, unknown>;
+    if (row.kind === "youtube" && typeof row.url === "string") return findSourceProjects(studioRoot(), { kind: "youtube", url: row.url });
+    if (row.kind === "file" && typeof row.path === "string") return findSourceProjects(studioRoot(), { kind: "file", path: row.path });
+    throw new Error("沒有來源");
+  });
+  ipcMain.handle("preview:resume", async (event, projectPath: unknown) => {
     if (typeof projectPath !== "string") throw new Error("沒有專案");
-    return resumeProject(projectPath);
+    try {
+      await ensureProjectMedia(projectPath, (text) => event.sender.send("import:progress", text));
+      return await resumeProject(projectPath);
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "未能讀取來源素材，原專案設定仍保留。" }; }
   });
   ipcMain.handle("cache:trash-all", async () => {
-    const idle = () => !exportBusy && !listJobs().some((job) => job.status === "running" || job.status === "waiting");
+    const idle = () => !exportBusy && !mediaRecoveryBusy() && !listJobs().some((job) => job.status === "running" || job.status === "waiting");
     if (!idle()) return "請等下載及匯出完成後再清除。";
     const entries = (await listCache(studioRoot())).filter((entry) => entry.clearable);
     if (!entries.length) return "沒有可安全清除的下載素材；未確認檔案會保留。";
@@ -88,7 +100,7 @@ export function registerImportIpc(): void {
     const answer = await dialog.showMessageBox({
       type: "warning", title: "全部清除下載素材",
       message: `將全部 ${entries.length} 個下載素材（${megabytes} MB）移至資源回收筒？`,
-      detail: `引用素材的專案將無法播放或匯出；重新新增連結會再下載。專案設定會保留。\n\n引用專案：\n${projects.join("\n") || "未找到引用專案"}`,
+      detail: `引用素材的專案將無法播放或匯出；專案設定會保留。YouTube 專案下次編輯會先找本機副本，冇先重新下載並接回原專案。\n\n引用專案：\n${projects.join("\n") || "未找到引用專案"}`,
       buttons: ["取消", "全部移至資源回收筒"], defaultId: 0, cancelId: 0,
     });
     if (answer.response !== 1) return "";
@@ -98,12 +110,12 @@ export function registerImportIpc(): void {
   ipcMain.handle("cache:list", () => listCache(studioRoot()));
   ipcMain.handle("cache:trash", async (_event, path: unknown) => {
     if (typeof path !== "string") return "無效素材";
-    if (exportBusy || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "請等下載及匯出完成後再清除。";
+    if (exportBusy || mediaRecoveryBusy() || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "請等素材補回、下載及匯出完成後再清除。";
     const entry = await cacheEntry(studioRoot(), path);
     if (!entry) return "素材已不存在，請重新整理。";
-    const answer = await dialog.showMessageBox({ type: "warning", title: "清除下載素材", message: `將 ${entry.name} 移至資源回收筒？`, detail: `引用此檔的專案將無法播放或匯出；重新新增連結會再下載。專案設定會保留。\n\n引用專案：\n${entry.projects.join("\n") || "未找到引用專案（可能是未完成下載）"}`, buttons: ["取消", "移至資源回收筒"], defaultId: 0, cancelId: 0 });
+    const answer = await dialog.showMessageBox({ type: "warning", title: "清除下載素材", message: `將 ${entry.name} 移至資源回收筒？`, detail: `引用此檔的專案將無法播放或匯出；專案設定會保留。YouTube 專案下次編輯會先找本機副本，冇先重新下載並接回原專案。\n\n引用專案：\n${entry.projects.join("\n") || "未找到引用專案（可能是未完成下載）"}`, buttons: ["取消", "移至資源回收筒"], defaultId: 0, cancelId: 0 });
     if (answer.response !== 1) return "";
-    if (exportBusy || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "有工作處理中，請稍後再試。";
+    if (exportBusy || mediaRecoveryBusy() || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "有工作處理中，請稍後再試。";
     const current = await cacheEntry(studioRoot(), path);
     if (!current || current.bytes !== entry.bytes || current.modified !== entry.modified) return "素材已變更，請重新整理。";
     try { await shell.trashItem(path); return ""; } catch { return "未能移至資源回收筒，檔案可能正被使用。"; }
@@ -134,6 +146,7 @@ export function registerImportIpc(): void {
   ipcMain.handle("preview:load", async (_event, projectPath: unknown) => {
     if (typeof projectPath !== "string") throw new Error("沒有專案");
     await waitProjectWrites(projectPath);
+    await ensureProjectMedia(projectPath);
     return loadPreview(projectPath);
   });
   ipcMain.handle("export:video", async (event: IpcMainInvokeEvent, body: unknown) => {
@@ -198,9 +211,9 @@ export function registerImportIpc(): void {
     return listJobs();
   });
   ipcMain.handle("queue:test", () => enqueueTest());
-  ipcMain.handle("queue:open", (_event, id: unknown) => {
+  ipcMain.handle("queue:open", (event, id: unknown) => {
     if (typeof id !== "string") return null;
-    return openJob(id);
+    return openJob(id, (text) => event.sender.send("import:progress", text));
   });
   ipcMain.handle("lyric:match", async (event, projectPath: unknown) => {
     if (typeof projectPath !== "string") return { ok: false, error: "沒有專案" };

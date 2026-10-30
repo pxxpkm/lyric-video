@@ -40,6 +40,7 @@ import {
   type MotionClip,
 } from "./motion";
 import { mediaMsForLyric } from "./preview";
+import { columnGlyphY, columnCenter } from "./lyricLook";
 import { defaultTiming, type TrackTiming } from "./timing";
 
 export function buildKaraokeAss(
@@ -71,8 +72,10 @@ export function buildKaraokeAss(
       const tint = clip?.preset === "tint" && !wordTimed ? tintOverride(look.color, look.sungColor, end - start) : "";
       const origFit = fitPercent(Array.from(line.text).length, look.size, look.tracking, look.outline, restX(look, clip), playWidth);
       const lead = clip ? withBlur(assMotion(clip, look, start, end, tint, origFit), look) : place(look, origFit, start, end);
-      events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look, clip?.preset === "edge")}`));
-      pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size, fitUsed(origFit));
+      if (look.showOriginal !== false) {
+        events.push(dialogue("Orig", start, end, `${lead}${karaokeBody(pieces, look, clip?.preset === "edge")}`));
+        pushDecor(events, anchorPx(look, clip), look.color, look, clip, start, end, "Orig", line.text, look.size, fitUsed(origFit));
+      }
       const trans = line.translatedText?.trim();
       if (trans) {
         const at = transAnchorPx(look, clip);
@@ -191,15 +194,16 @@ function verticalEvents(
       playHeight,
       look.font,
       look.columnGap,
+      look.verticalAnchor,
     ),
   );
   const origStep = verticalPitch(look.size, look.tracking, look.outline, origUsed, look.font, look.columnGap);
-  const events = glyphs.map((glyph, index) =>
+  const events = look.showOriginal === false ? [] : glyphs.map((glyph, index) =>
     dialogue(
       "Orig",
       start,
       end,
-      `${glyphOverride(anchor.x, columnY(anchor.y, glyphs.length, origStep, index), look.size * origUsed, look, fade, glyph.switchMs, look.color, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor, look.font)}${escapeAss(glyph.ch)}`,
+      `${glyphOverride(anchor.x, columnGlyphY(anchor.y, glyphs.length, origStep, index, look.verticalAnchor), look.size * origUsed, look, fade, glyph.switchMs, look.color, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, glyphs.length) : look.outlineColor, look.font)}${escapeAss(glyph.ch)}`,
     ),
   );
   const trans = line.translatedText?.trim();
@@ -215,6 +219,7 @@ function verticalEvents(
         playHeight,
         look.transFont,
         look.columnGap,
+        look.verticalAnchor,
       ),
     );
     const step = verticalPitch(look.transSize, look.tracking, look.outline, transUsed, look.transFont, look.columnGap);
@@ -224,13 +229,13 @@ function verticalEvents(
           "Trans",
           start,
           end,
-          `${glyphOverride(transAt.x, columnY(transAt.y, chars.length, step, index), look.transSize * transUsed, look, fade, null, look.transColor, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, chars.length) : look.outlineColor, look.transFont)}${escapeAss(ch)}`,
+          `${glyphOverride(transAt.x, columnGlyphY(transAt.y, chars.length, step, index, look.verticalAnchor), look.transSize * transUsed, look, fade, null, look.transColor, clip, span, edged ? edgeOutlineAt(look.outlineColor, look.sungColor, index, chars.length) : look.outlineColor, look.transFont)}${escapeAss(ch)}`,
         ),
       );
     });
-    pushDecor(events, transAt, look.transColor, look, clip, start, end, "Trans", trans, look.transSize, transUsed);
+    pushDecor(events, { ...transAt, y: columnCenter(transAt.y, chars.length, step, look.verticalAnchor) }, look.transColor, look, clip, start, end, "Trans", trans, look.transSize, transUsed);
   }
-  pushDecor(events, anchor, look.color, look, clip, start, end, "Orig", line.text, look.size, origUsed);
+  if (look.showOriginal !== false) pushDecor(events, { ...anchor, y: columnCenter(anchor.y, glyphs.length, origStep, look.verticalAnchor) }, look.color, look, clip, start, end, "Orig", line.text, look.size, origUsed);
   return events;
 }
 
@@ -275,10 +280,6 @@ function transRest(look: LyricLook, clip: MotionClip | undefined): { x: number; 
 
 function posTag(x: number, y: number, fade: string, fit = 100): string {
   return `{\\an5\\pos(${Math.round(x)},${Math.round(y)})${fitWidthTag(fit)}${fade}}`;
-}
-
-function columnY(center: number, count: number, step: number, index: number): number {
-  return center + (index - (count - 1) / 2) * step;
 }
 
 function glyphOverride(

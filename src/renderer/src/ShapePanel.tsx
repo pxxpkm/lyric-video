@@ -119,7 +119,7 @@ export function ShapePanel({
         </div>
         <p className="meta span">
           {allOn
-            ? "已全選。喺預覽拖原文，全部原文一齊走；拖譯文，全部譯文一齊走。再撳一次全選，或揀返一句，就回到逐句。"
+            ? "已全選，淡入淡出及預設會套用全部句。拖動範圍同對象由預覽上方的選項決定。"
             : selected
               ? selected.text
               : "尚未選句。還沒單獨擺過的句子，停在成首位置。"}

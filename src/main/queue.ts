@@ -4,6 +4,7 @@ import { describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { matchProject, pendingPick } from "./matchLyrics";
 import { createTestClip, loadPreview } from "./testClip";
 import { waitProjectWrites } from "./projectFile";
+import { ensureProjectMedia } from "./projectMedia";
 import type { PickList } from "../shared/pick";
 import type { PreviewSession } from "../shared/preview";
 
@@ -67,10 +68,11 @@ export async function enqueueTest(): Promise<PreviewSession> {
   }
 }
 
-export async function openJob(id: string): Promise<{ kind: "preview"; session: PreviewSession } | { kind: "pick"; session: PreviewSession; pick: PickList } | null> {
+export async function openJob(id: string, progress?: (text: string) => void): Promise<{ kind: "preview"; session: PreviewSession } | { kind: "pick"; session: PreviewSession; pick: PickList } | null> {
   const job = jobs.find((item) => item.id === id);
   if (!job?.projectPath) return null;
   await waitProjectWrites(job.projectPath);
+  await ensureProjectMedia(job.projectPath, progress);
   const session = loadPreview(job.projectPath);
   const pick = pendingPick(job.projectPath);
   job.session = session;

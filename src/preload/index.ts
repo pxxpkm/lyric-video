@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("lyric", {
+  findSourceProjects: (source: unknown) => ipcRenderer.invoke("import:find-projects", source),
   onCloseRequest: (callback: () => Promise<boolean>) => {
     const listener = async (_event: unknown, token: string) => {
       let ok = false;

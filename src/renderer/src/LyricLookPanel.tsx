@@ -23,12 +23,21 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
         排列
         <select
           value={isVerticalFlow(look.flow) ? "vertical" : "horizontal"}
-          onChange={(event) => patch({ flow: event.target.value as LyricFlow })}
+          onChange={(event) => patch({ flow: event.target.value as LyricFlow, ...(event.target.value === "vertical" ? { verticalAnchor: "first" as const } : {}) })}
         >
           <option value="horizontal">橫排</option>
           <option value="vertical">垂直</option>
         </select>
       </label>
+      {isVerticalFlow(look.flow) ? <label className="span">直排定位
+        <select value={look.verticalAnchor ?? "center"} onChange={(event) => patch({ verticalAnchor: event.target.value === "first" ? "first" : "center" })}>
+          <option value="first">句首固定，向下排列</option><option value="center">中央定位（舊版）</option>
+        </select>
+      </label> : null}
+      <button type="button" className="span" aria-pressed={look.showOriginal === false} onClick={() => patch({ showOriginal: look.showOriginal === false })}>
+        {look.showOriginal === false ? "顯示原文" : "隱藏原文"}
+      </button>
+      <p className="meta span">原文顯示同時影響預覽、ASS 同 MP4 匯出；隱藏唔會刪除歌詞。</p>
       <p className="meta span">垂直由上寫到下，逐隻字疊住。橫排都一樣，原文同譯文可以分開擺。例如日文放左側、中文放右側。</p>
       <label className="span">
         原文字體
@@ -91,7 +100,7 @@ export function LyricLookPanel({ look, onChange }: { look: LyricLook; onChange: 
       <Slider label="原文上下" min={0.08} max={0.94} step={0.01} value={look.y} onChange={(y) => patch({ y })} />
       <Slider label="譯文左右" min={0} max={1} step={0.01} value={look.transX} onChange={(transX) => patch({ transX })} />
       <Slider label="譯文上下" min={0.08} max={0.94} step={0.01} value={look.transY} onChange={(transY) => patch({ transY })} />
-      <button type="button" className="span" onClick={() => onChange(defaultLook)}>
+      <button type="button" className="span" onClick={() => onChange({ ...defaultLook, verticalAnchor: "first" })}>
         還原字體
       </button>
     </>

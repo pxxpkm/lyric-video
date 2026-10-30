@@ -10,6 +10,8 @@ export const lyricFonts: readonly LyricFont[] = [
 export type LyricFlow = "horizontal" | "vertical";
 
 export type LyricLook = {
+  showOriginal?: boolean;
+  verticalAnchor?: "first" | "center";
   font: string;
   size: number;
   color: string;
@@ -56,6 +58,8 @@ export const playHeight = 1080;
 const legacyTransScale = 0.56;
 
 export const defaultLook: LyricLook = {
+  showOriginal: true,
+  verticalAnchor: "center",
   font: "chiron",
   size: 64,
   color: "#E8D7C4",
@@ -99,6 +103,8 @@ export function clampLook(input: (Partial<LyricLook> & { transScale?: number }) 
   const size = clamp(raw.size, 24, 120, defaultLook.size);
   const color = hex(raw.color, defaultLook.color);
   return {
+    showOriginal: raw.showOriginal !== false,
+    verticalAnchor: raw.verticalAnchor === "first" ? "first" : "center",
     font: lyricFont(raw.font).id,
     size,
     color,
@@ -220,7 +226,9 @@ export function fitPercent(
   outline: number,
   anchor: number,
   frame: number,
+  anchorMode: "first" | "center" = "center",
 ): number {
+  if (anchorMode === "first") return firstColumnFit(count, anchor, frame, (used) => ({ step: (size + letterGap(tracking)) * used, half: size * used / 2 + outline }));
   const ink = lineInk(count, size, tracking, outline);
   const room = frameRoom(anchor, frame);
   if (!(ink > room)) return 100;
@@ -240,7 +248,9 @@ export function verticalFitPercent(
   frame: number,
   fontId?: string,
   gap?: number,
+  anchorMode: "first" | "center" = "center",
 ): number {
+  if (anchorMode === "first") return firstColumnFit(count, anchor, frame, (used) => ({ step: verticalPitch(size, tracking, outline, used, fontId, gap), half: glyphBox(size, outline, fontId, gap, used) / 2 }));
   const full = verticalInk(count, size, tracking, outline, 1, fontId, gap);
   const room = frameRoom(anchor, frame);
   if (!(full > room)) return 100;
@@ -248,6 +258,27 @@ export function verticalFitPercent(
   const body = full - borders;
   if (!(body > 0) || borders >= room) return 1;
   return Math.max(1, Math.floor(((room - borders) / body) * 100));
+}
+
+export function columnGlyphY(anchor: number, count: number, step: number, index: number, mode: "first" | "center" = "center"): number {
+  return anchor + (mode === "first" ? index : index - (Math.max(1, count) - 1) / 2) * step;
+}
+
+export function columnCenter(anchor: number, count: number, step: number, mode: "first" | "center" = "center"): number {
+  return mode === "first" ? anchor + (Math.max(1, count) - 1) * step / 2 : anchor;
+}
+
+function firstColumnFit(count: number, anchor: number, frame: number, measure: (used: number) => { step: number; half: number }): number {
+  const y = unit(anchor) * frame;
+  let low = 1;
+  let high = 100;
+  while (low < high) {
+    const percent = Math.ceil((low + high) / 2);
+    const { step, half } = measure(percent / 100);
+    if (y - half >= frameEdge && y + (Math.max(1, count) - 1) * step + half <= frame - frameEdge) low = percent;
+    else high = percent - 1;
+  }
+  return low;
 }
 
 /** 收窄比例。100 就係 1，短句的位置同字級先至唔會偏移。 */
