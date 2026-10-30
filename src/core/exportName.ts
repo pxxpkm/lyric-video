@@ -1,9 +1,9 @@
 import { basename, dirname, extname, join } from "node:path";
 
-export function exportPartPath(outPath: string): string {
+export function exportPartPath(outPath: string, token?: string): string {
   const ext = extname(outPath).toLowerCase() === ".mp4" ? extname(outPath) : ".mp4";
   const base = basename(outPath, extname(outPath)).replace(/^\.+/, "").trim() || "歌詞影片";
-  return join(dirname(outPath), `${base}.part${ext}`);
+  return join(dirname(outPath), `${base}${token ? `.${token}` : ""}.part${ext}`);
 }
 
 function exportStem(title: string | null | undefined): string {

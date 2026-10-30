@@ -1,4 +1,6 @@
-import { copyFile, mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { assertExportDestination, publishExport } from "./exportFile";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { buildKaraokeAss } from "../core/ass";
 import { exportPartPath } from "../core/exportName";
@@ -27,6 +29,11 @@ export async function exportProject(
   fontsDir: string,
   onProgress: (text: string) => void,
 ): Promise<{ ok: true; outPath: string; assPath: string } | { ok: false; error: string }> {
+  try {
+    await assertExportDestination(request.mediaPath, request.outPath);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "未能檢查匯出位置" };
+  }
   const folder = dirname(request.projectPath);
   await mkdir(folder, { recursive: true });
   const assPath = join(folder, "karaoke.ass");
@@ -34,7 +41,7 @@ export async function exportProject(
 
   const outPath = request.outPath;
   await mkdir(dirname(outPath), { recursive: true });
-  const part = exportPartPath(outPath);
+  const part = exportPartPath(outPath, randomUUID());
   const fonts = assFontsDirPlan(folder, fontsDir);
   if (fonts.copyTo) {
     onProgress("正在準備字體");
@@ -108,8 +115,11 @@ export async function exportProject(
     const tail = result.stderr.trim().split(/\r?\n/).slice(-3).join(" ");
     return { ok: false, error: tail || "匯出失敗" };
   }
-  await rm(outPath, { force: true });
-  await rename(part, outPath);
+  try {
+    await publishExport(part, outPath, request.mediaPath);
+  } catch {
+    return { ok: false, error: `未能替換成片，原有目的檔未被刪除。新成片保留於：${part}。請關閉正在使用目的檔的程式，或另選檔名重試。` };
+  }
   onProgress("匯出完成");
   return { ok: true, outPath, assPath };
 }
