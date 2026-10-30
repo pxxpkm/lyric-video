@@ -1,10 +1,10 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { exampleProject } from "../../src/core/project";
 import { ensureLogDir, logDir } from "../../src/main/log";
-import { saveProject } from "../../src/main/projectFile";
+import { saveProject, updateProject, waitProjectWrites } from "../../src/main/projectFile";
 
 const dirs: string[] = [];
 
@@ -19,6 +19,52 @@ async function tempDir(): Promise<string> {
 }
 
 describe("saveProject", () => {
+  it("十次並行保存全部成功，最後提交版本落盤且無暫存碰撞", async () => {
+    const dir = await tempDir();
+    const path = join(dir, "project.json");
+    await Promise.all(Array.from({ length: 10 }, (_, index) => {
+      const project = exampleProject();
+      project.identity.title = `版本${index}`;
+      return saveProject(path, project);
+    }));
+    await waitProjectWrites(path);
+    expect(JSON.parse(await readFile(path, "utf8")).identity.title).toBe("版本9");
+    expect(await readdir(dir)).toEqual(["project.json"]);
+  });
+
+  it("同專案讀改寫排序，不同欄位更新不會互相蓋掉", async () => {
+    const dir = await tempDir();
+    const path = join(dir, "project.json");
+    await saveProject(path, exampleProject());
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const first = updateProject(path, async (project) => {
+      await gate;
+      project.identity.title = "新歌名";
+      return project;
+    });
+    const second = updateProject(path, (project) => {
+      project.timing.offsetMs = 1250;
+      return project;
+    });
+    const otherPath = join(dir, "other.json");
+    await saveProject(otherPath, exampleProject());
+    release();
+    await Promise.all([first, second]);
+    const saved = JSON.parse(await readFile(path, "utf8"));
+    expect(saved.identity.title).toBe("新歌名");
+    expect(saved.timing.offsetMs).toBe(1250);
+  });
+
+  it("更新失敗後原檔有效，後續更新仍可完成", async () => {
+    const path = join(await tempDir(), "project.json");
+    await saveProject(path, exampleProject());
+    const failed = updateProject(path, () => { throw new Error("failed"); });
+    const retry = updateProject(path, (project) => { project.identity.title = "重試成功"; return project; });
+    await expect(failed).rejects.toThrow("failed");
+    await retry;
+    expect(JSON.parse(await readFile(path, "utf8")).identity.title).toBe("重試成功");
+  });
   it("寫壞的內容不會覆蓋原來的檔", async () => {
     const dir = await tempDir();
     const path = join(dir, "project.json");

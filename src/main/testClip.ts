@@ -10,7 +10,7 @@ import { timingForProject } from "../core/projectTiming";
 import { testToneWav } from "../core/testTone";
 import type { TrackTiming } from "../core/timing";
 import type { PreviewSession } from "../shared/preview";
-import { saveProject } from "./projectFile";
+import { saveProject, updateProject } from "./projectFile";
 import { studioRoot } from "./importService";
 
 export function sessionFromProject(project: Project, projectPath: string): PreviewSession {
@@ -57,14 +57,15 @@ export async function savePreviewTiming(
   look?: LyricLook,
   motion?: MotionClip[],
 ): Promise<void> {
-  const project = parseProject(JSON.parse(readFileSync(projectPath, "utf8")));
-  project.timing = timingForProject(timing);
-  if (look) {
-    const next = clampLook(look);
-    project.style = { ...project.style, ...next };
-  }
-  if (motion) project.motion = motion;
-  await saveProject(projectPath, project);
+  await updateProject(projectPath, (project) => {
+    project.timing = timingForProject(timing);
+    if (look) {
+      const next = clampLook(look);
+      project.style = { ...project.style, ...next };
+    }
+    if (motion) project.motion = motion;
+    return project;
+  });
 }
 
 export async function createTestClip(): Promise<PreviewSession> {

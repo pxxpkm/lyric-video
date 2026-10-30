@@ -6,6 +6,8 @@ import type { QueueJob } from "./lyric";
 import { PickSong } from "./PickSong";
 import { Preview } from "./Preview";
 import { CacheLibrary } from "./CacheLibrary";
+import { flushActiveSave } from "./projectSaver";
+import { ImportProjectFlow } from "./importProjectFlow";
 
 type Source = { kind: "youtube"; url: string } | { kind: "file"; path: string } | null;
 
@@ -18,6 +20,7 @@ function formatDuration(ms: number): string {
 }
 
 export function App() {
+  const [importFlow] = useState(() => new ImportProjectFlow());
   const [showCache, setShowCache] = useState(false);
   const [status, setStatus] = useState("尚未匯入");
   const [url, setUrl] = useState("");
@@ -38,6 +41,8 @@ export function App() {
   const [session, setSession] = useState<PreviewSession | null>(null);
   const [pick, setPick] = useState<PickList | null>(null);
 
+  useEffect(() => window.lyric?.onCloseRequest(flushActiveSave), []);
+
   useEffect(() => {
     if (!window.lyric) return;
     void window.lyric.getSettings().then((settings) => setShowTrans(settings.showTrans));
@@ -57,6 +62,7 @@ export function App() {
   }
 
   function applyDraft(next: ImportDraft, nextSource: Source) {
+    importFlow.reset();
     setSource(nextSource);
     setDraft(next);
     setTitle(next.title);
@@ -130,21 +136,13 @@ export function App() {
     setBusy(true);
     setError("");
     try {
-      const result =
-        source.kind === "youtube"
-          ? await window.lyric.downloadUrl(source.url, request())
-          : await window.lyric.saveFile(source.path, request());
-      if (!result.ok) {
-        setError(result.error);
-        setStatus(source.kind === "youtube" ? "下載失敗，請改拖本機檔。" : "尚未建立專案");
-        return;
-      }
-      setSavedPath(result.projectPath);
-      setStatus("正在搜尋歌詞");
-      showMatch(await window.lyric.matchProject(result.projectPath));
+      setStatus(importFlow.existingPath(source, request()) ? "正在讀取已保存專案" : "正在建立專案及搜尋歌詞");
+      showMatch(await importFlow.open(source, request(), window.lyric));
     } catch {
-      setError("下載失敗，請改拖本機檔。");
+      setError("未能開啟或建立專案，請再試；已有專案不會重新初始化。");
     } finally {
+      const path = importFlow.existingPath(source, request());
+      if (path) setSavedPath(path);
       setBusy(false);
     }
   }
@@ -185,16 +183,15 @@ export function App() {
   if (screen === "preview" && session) {
     return (
       <Preview
+        key={session.projectPath}
         session={session}
         showTrans={showTrans}
         onBack={() => setScreen("import")}
-        onPick={() => {
+        onPick={async () => {
           setBusy(true);
           setError("");
-          void window.lyric
-            .browseProject(session.projectPath, null)
-            .then(showMatch)
-            .finally(() => setBusy(false));
+          try { showMatch(await window.lyric.browseProject(session.projectPath, null)); }
+          finally { setBusy(false); }
         }}
       />
     );
@@ -293,17 +290,18 @@ export function App() {
           </select>
         </label>
         <button type="button" disabled={busy || !source} onClick={() => void save()}>
-          {source?.kind === "youtube" ? "下載並建立專案" : "建立專案"}
+          {source && importFlow.existingPath(source, request()) ? "繼續編輯專案" : importFlow.hasCreated ? "建立另一份專案" : source?.kind === "youtube" ? "下載並建立專案" : "建立專案"}
         </button>
+        {importFlow.hasCreated ? <p className="meta">相同匯入資料會開啟已保存的專案。更改歌名、歌手或影音模式後，建立的是另一份使用初始設定的專案。</p> : null}
         <button
           type="button"
           disabled={busy || !savedPath}
-          onClick={() => {
+          onClick={async () => {
             if (!savedPath) return;
-            void window.lyric.loadProject(savedPath).then((loaded) => {
-              setSession(loaded);
-              setScreen("preview");
-            });
+            setBusy(true);
+            try { showMatch(await window.lyric.resumeProject(savedPath)); }
+            catch { setError("讀不到已保存專案，請確認檔案仍在後再試。"); }
+            finally { setBusy(false); }
           }}
         >
           預覽這個檔
@@ -356,7 +354,7 @@ export function App() {
               className="queue-item"
               disabled={job.status !== "ready"}
               onClick={() => {
-                void window.lyric.openJob(job.id).then((loaded) => showMatch(loaded));
+                void window.lyric.openJob(job.id).then(showMatch).catch(() => setError("讀不到最新專案，請確認檔案仍在，然後再試。"));
               }}
             >
               <span>

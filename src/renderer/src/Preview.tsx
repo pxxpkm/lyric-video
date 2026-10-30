@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
+import { ProjectSaver, registerActiveSave, type SaveStatus } from "./projectSaver";
 import { drawPreview, hitsCurrentLyric, mediaKeepsPainting, previewPaintKey, readoutFrame, sessionLines, shouldPaintPreview } from "./drawPreview";
 import { ShapePanel } from "./ShapePanel";
 import { TimingPanel } from "./TimingPanel";
@@ -38,7 +39,7 @@ export function Preview({
   session: PreviewSession;
   showTrans: boolean;
   onBack: () => void;
-  onPick?: () => void;
+  onPick?: () => Promise<void>;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -73,8 +74,32 @@ export function Preview({
   const src = mediaSrc(session.mediaPath);
   const hasLyrics = session.lines.length > 0;
   const allowPick = !session.projectPath.replaceAll("\\", "/").endsWith("/test-clip/project.json");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
+  const [saver] = useState(() => new ProjectSaver(
+    { timing: timingForProject(timing), look, motion: clips },
+    async (value) => {
+      const ok = await window.lyric.saveTiming(session.projectPath, value.timing, value.look, value.motion);
+      if (!ok) throw new Error("保存失敗");
+    },
+  ));
 
-  useEffect(() => {
+  function saveLatest() {
+    saver.update({ timing: timingForProject(timingRef.current), look: lookRef.current, motion: clipsRef.current });
+    return saver.flush();
+  }
+
+  async function leave(action: () => void | Promise<void>) {
+    if (leaving) return;
+    setLeaving(true);
+    setLeaveError("");
+    try { if (await saveLatest()) await action(); }
+    catch { setLeaveError("未能開啟歌詞選擇，修改已保存，請再試。"); }
+    finally { setLeaving(false); }
+  }
+
+  useLayoutEffect(() => {
     linesRef.current = sessionLines(session.lines).map((line) =>
       showTrans ? line : { ...line, translatedText: null },
     );
@@ -100,13 +125,20 @@ export function Preview({
 
   useEffect(() => window.lyric.onExportProgress(setExportText), []);
 
+  useEffect(() => saver.subscribe(setSaveStatus), [saver]);
+  useLayoutEffect(() => {
+    saver.update({ timing: timingForProject(timing), look, motion: clips });
+  }, [timing, look, clips, saver]);
+  useEffect(() => registerActiveSave(saveLatest), [saver]);
   useEffect(() => {
-    if (!session.projectPath) return;
-    const handle = window.setTimeout(() => {
-      void window.lyric.saveTiming(session.projectPath, timingForProject(timing), look, clips);
-    }, 200);
-    return () => window.clearTimeout(handle);
-  }, [timing, look, clips, session.projectPath]);
+    const warnUnload = (event: BeforeUnloadEvent) => {
+      if (saver.status === "saved") return;
+      event.preventDefault();
+      event.returnValue = "尚有修改未保存";
+    };
+    window.addEventListener("beforeunload", warnUnload);
+    return () => window.removeEventListener("beforeunload", warnUnload);
+  }, [saver]);
 
   useEffect(() => {
     void ensureChiron();
@@ -370,7 +402,7 @@ export function Preview({
   return (
     <main className="studio">
       <header className="topbar">
-        <IconButton label="返回" onClick={onBack}>
+        <IconButton label="返回" disabled={leaving} onClick={() => void leave(onBack)}>
           <BackIcon />
         </IconButton>
         <div className="title-block">
@@ -380,9 +412,12 @@ export function Preview({
             {hasLyrics ? "" : " · 尚未有歌詞"}
           </p>
         </div>
-        <span />
+        <span role="status">{({ saved: "已保存", pending: "待保存", saving: "保存中…", error: "保存失敗，修改仍保留喺畫面" })[saveStatus]}
+          {saveStatus === "error" ? <button disabled={leaving} onClick={() => void saveLatest()}>重試保存</button> : null}
+        </span>
       </header>
-      <div className="studio-body">
+      {leaveError ? <p role="alert">{leaveError}</p> : null}
+      <div className="studio-body" inert={leaving}>
         <section className="stage-col">
           <div className="stage-fit">
             <div className="stage">
@@ -432,7 +467,7 @@ export function Preview({
             <TimeReadout nodeRef={readRef} />
             <div className="stage-actions">
               {allowPick && onPick ? (
-                <button type="button" onClick={onPick}>
+                <button type="button" disabled={leaving} onClick={() => void leave(onPick)}>
                   選擇歌詞
                 </button>
               ) : null}

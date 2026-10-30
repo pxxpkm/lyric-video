@@ -1,6 +1,15 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("lyric", {
+  onCloseRequest: (callback: () => Promise<boolean>) => {
+    const listener = async (_event: unknown, token: string) => {
+      let ok = false;
+      try { ok = await callback(); } catch { /* 保存失敗時保留視窗。 */ }
+      ipcRenderer.send("window:close-ready", token, ok);
+    };
+    ipcRenderer.on("window:request-close", listener);
+    return () => ipcRenderer.removeListener("window:request-close", listener);
+  },
   listCache: () => ipcRenderer.invoke("cache:list"),
   trashCache: (path: string) => ipcRenderer.invoke("cache:trash", path),
   trashAllCache: () => ipcRenderer.invoke("cache:trash-all"),
@@ -11,6 +20,7 @@ contextBridge.exposeInMainWorld("lyric", {
   saveFile: (filePath: string, request: unknown) => ipcRenderer.invoke("import:save-file", filePath, request),
   createTestClip: () => ipcRenderer.invoke("preview:test-clip"),
   loadProject: (projectPath: string) => ipcRenderer.invoke("preview:load", projectPath),
+  resumeProject: (projectPath: string) => ipcRenderer.invoke("preview:resume", projectPath),
   saveTiming: (projectPath: string, timing: unknown, look: unknown, motion: unknown) =>
     ipcRenderer.invoke("preview:save", projectPath, timing, look, motion),
   chironFont: () => ipcRenderer.invoke("look:chiron"),

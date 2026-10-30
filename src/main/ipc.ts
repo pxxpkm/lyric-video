@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { assFileName, mp4FileName } from "../core/exportName";
 import { exportProject, saveAssFile, type ExportRequest } from "./exportVideo";
 import { resourceRoot } from "./paths";
-import { browseProject, matchProject, useCandidate } from "./matchLyrics";
+import { browseProject, matchProject, resumeProject, useCandidate } from "./matchLyrics";
 import { enqueueFile, enqueueTest, enqueueUrls, listJobs, openJob } from "./queue";
 import { readSettings, writeSettings } from "./settings";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
@@ -17,6 +17,7 @@ import type { MotionClip } from "../core/motion";
 import { timingFromProject } from "../core/projectTiming";
 import type { StoredTiming } from "../shared/preview";
 import type { SaveRequest } from "../shared/import";
+import { waitProjectWrites } from "./projectFile";
 
 let exportBusy = false;
 
@@ -73,6 +74,10 @@ function exportRequest(value: unknown): ExportRequest | null {
 }
 
 export function registerImportIpc(): void {
+  ipcMain.handle("preview:resume", (_event, projectPath: unknown) => {
+    if (typeof projectPath !== "string") throw new Error("沒有專案");
+    return resumeProject(projectPath);
+  });
   ipcMain.handle("cache:trash-all", async () => {
     const idle = () => !exportBusy && !listJobs().some((job) => job.status === "running" || job.status === "waiting");
     if (!idle()) return "請等下載及匯出完成後再清除。";
@@ -126,8 +131,9 @@ export function registerImportIpc(): void {
   });
 
   ipcMain.handle("preview:test-clip", () => createTestClip());
-  ipcMain.handle("preview:load", (_event, projectPath: unknown) => {
+  ipcMain.handle("preview:load", async (_event, projectPath: unknown) => {
     if (typeof projectPath !== "string") throw new Error("沒有專案");
+    await waitProjectWrites(projectPath);
     return loadPreview(projectPath);
   });
   ipcMain.handle("export:video", async (event: IpcMainInvokeEvent, body: unknown) => {

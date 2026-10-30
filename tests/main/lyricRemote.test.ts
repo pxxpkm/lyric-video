@@ -5,10 +5,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { projectFromImport } from "../../src/core/importPlan";
-import { browseProject, isTestClipProject, matchProject, useCandidate } from "../../src/main/matchLyrics";
+import { browseProject, isTestClipProject, matchProject, pendingPick, resumeProject, useCandidate } from "../../src/main/matchLyrics";
 import { ChoiceStore } from "../../src/main/choiceStore";
 import { neteaseSearchCall, searchSources, type LyricCall, type LyricFetch } from "../../src/main/lyricRemote";
-import { saveProject } from "../../src/main/projectFile";
+import { saveProject, updateProject } from "../../src/main/projectFile";
 import { installProjectDict } from "../installDict";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -105,11 +105,38 @@ describe("配上歌詞", () => {
     expect(found.kind).toBe("pick");
     if (found.kind !== "pick") return;
     expect(found.pick.hits.length).toBeGreaterThan(1);
+    expect((await resumeProject(path)).kind).toBe("pick");
     const used = await useCandidate(path, "qq:0039MnYb0qxYhV", true, { fetch: routed(), choices });
     expect("kind" in used && used.kind === "preview").toBe(true);
     if (!("kind" in used) || used.kind !== "preview") return;
     expect(used.session.lines[0]?.text).toBe("窗外的麻雀");
     expect(choices.get("七里香", "周杰倫")).toBe("qq:0039MnYb0qxYhV");
+    expect(pendingPick(path)).toBeUndefined();
+    expect((await resumeProject(path)).kind).toBe("preview");
+  });
+
+  it("網絡查詞期間保存的時機及外觀不被舊搜尋快照覆蓋", async () => {
+    const dir = await tempDir();
+    const path = await project(dir, 269_000);
+    const choices = new ChoiceStore(join(dir, "choices.json"));
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const entered = new Promise<void>((resolve) => { started = resolve; });
+    const source = routed((call) => !call.url.includes("cloudsearch") && !call.url.includes("/api/song/lyric"));
+    const matching = matchProject(path, { choices, fetch: async (call) => { started(); await gate; return source(call); } });
+    await entered;
+    await updateProject(path, (latest) => {
+      latest.timing.offsetMs = 1500;
+      latest.style.size = 77;
+      return latest;
+    });
+    release();
+    const found = await matching;
+    expect(found.kind).toBe("preview");
+    expect(found.session.timing.offsetMs).toBe(1500);
+    expect(found.session.look.size).toBe(77);
+    expect(found.session.lines[0]?.text).toBe("窗外的麻雀");
   });
 
   it("長片不自動採用", async () => {

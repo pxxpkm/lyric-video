@@ -8,18 +8,26 @@ import type { MatchResult, PickList } from "../shared/pick";
 import { ChoiceStore } from "./choiceStore";
 import { logDir } from "./log";
 import { fetchLyricByKey, liveFetch, searchSources, type LyricFetch } from "./lyricRemote";
-import { saveProject } from "./projectFile";
+import { updateProject, waitProjectWrites } from "./projectFile";
 import { loadPreview } from "./testClip";
 
 const pending = new Map<string, PickList>();
 
 type MatchDeps = { fetch?: LyricFetch; choices?: ChoiceStore };
 
+export async function resumeProject(projectPath: string): Promise<MatchResult> {
+  await waitProjectWrites(projectPath);
+  const session = loadPreview(projectPath);
+  const pick = pending.get(projectPath);
+  return pick ? { kind: "pick", session, pick } : { kind: "preview", session };
+}
+
 export function isTestClipProject(projectPath: string): boolean {
   return basename(dirname(projectPath)).toLowerCase() === "test-clip";
 }
 
 export async function matchProject(projectPath: string, deps?: MatchDeps): Promise<MatchResult> {
+  await waitProjectWrites(projectPath);
   const current = loadPreview(projectPath);
   if (isTestClipProject(projectPath)) return { kind: "preview", session: current };
   try {
@@ -27,7 +35,8 @@ export async function matchProject(projectPath: string, deps?: MatchDeps): Promi
     const found = await lookup(project, deps);
     pending.set(projectPath, found.pick);
     if (!found.lines || !found.chosen) return { kind: "pick", session: current, pick: found.pick };
-    await saveProject(projectPath, applyLyricsToProject(project, found.lines, found.chosen));
+    await updateProject(projectPath, (latest) => applyLyricsToProject(latest, found.lines!, found.chosen!));
+    pending.delete(projectPath);
     return { kind: "preview", session: loadPreview(projectPath) };
   } catch {
     const pick: PickList = {
@@ -47,6 +56,7 @@ export async function browseProject(
   fields: { title: string; artist: string; lockTitle: boolean; lockArtist: boolean } | null,
   deps?: MatchDeps,
 ): Promise<MatchResult> {
+  await waitProjectWrites(projectPath);
   const current = loadPreview(projectPath);
   if (isTestClipProject(projectPath)) return { kind: "preview", session: current };
   const project = readProject(projectPath);
@@ -58,7 +68,7 @@ export async function browseProject(
       lockTitle: fields.lockTitle,
       lockArtist: fields.lockArtist,
     };
-    await saveProject(projectPath, project);
+    await updateProject(projectPath, (latest) => ({ ...latest, identity: { ...latest.identity, ...fields } }));
   }
   const found = await lookup(project, deps, true);
   pending.set(projectPath, found.pick);
@@ -71,16 +81,16 @@ export async function useCandidate(
   remember: boolean,
   deps?: MatchDeps,
 ): Promise<MatchResult | { ok: false; error: string }> {
+  await waitProjectWrites(projectPath);
   if (isTestClipProject(projectPath)) return { kind: "preview", session: loadPreview(projectPath) };
   const list = pending.get(projectPath);
   const hit = list?.hits.find((item) => item.key === key);
   if (!list || !hit) return { ok: false, error: "請再搜一次" };
   const lines = await fetchLyricByKey(hit.key, keyword(list.title, list.artist), fetchOf(deps));
   if (!lines || lines.length === 0) return { ok: false, error: "抓不到這份歌詞" };
-  const project = readProject(projectPath);
-  await saveProject(
+  await updateProject(
     projectPath,
-    applyLyricsToProject(project, lines, {
+    (project) => applyLyricsToProject(project, lines, {
       key: hit.key,
       source: hit.source,
       score: hit.score,
@@ -88,6 +98,7 @@ export async function useCandidate(
       reason: "人手揀",
     }),
   );
+  pending.delete(projectPath);
   if (remember) choicesOf(deps).set(list.title, list.artist, hit.key);
   return { kind: "preview", session: loadPreview(projectPath) };
 }
@@ -165,6 +176,10 @@ function choicesOf(deps?: MatchDeps): ChoiceStore {
 }
 
 let stored: ChoiceStore | null = null;
+
+export function pendingPick(projectPath: string): PickList | undefined {
+  return pending.get(projectPath);
+}
 
 function defaultChoices(): ChoiceStore {
   stored ??= new ChoiceStore(join(logDir(), "choices.json"));

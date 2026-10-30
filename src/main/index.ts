@@ -8,6 +8,7 @@ import { installDict } from "../core/s2t";
 import { registerImportIpc } from "./ipc";
 import { ensureLogDir, logDir } from "./log";
 import { resourceRoot, setRoots } from "./paths";
+import { installCloseGuard } from "./closeGuard";
 
 setRoots({
   studio: () => (app.isPackaged ? join(app.getPath("userData"), "studio-data") : join(process.cwd(), "studio-data")),
@@ -42,6 +43,7 @@ function createWindow(): void {
     },
   });
 
+  installCloseGuard(win);
   win.on("ready-to-show", () => win.show());
 
   const devUrl = process.env.ELECTRON_RENDERER_URL;

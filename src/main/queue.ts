@@ -1,8 +1,9 @@
 import { BrowserWindow } from "electron";
 import { randomBytes } from "node:crypto";
 import { describeUrl, saveDownloaded, saveLocal } from "./importService";
-import { matchProject } from "./matchLyrics";
-import { createTestClip } from "./testClip";
+import { matchProject, pendingPick } from "./matchLyrics";
+import { createTestClip, loadPreview } from "./testClip";
+import { waitProjectWrites } from "./projectFile";
 import type { PickList } from "../shared/pick";
 import type { PreviewSession } from "../shared/preview";
 
@@ -66,11 +67,17 @@ export async function enqueueTest(): Promise<PreviewSession> {
   }
 }
 
-export function openJob(id: string): { kind: "preview"; session: PreviewSession } | { kind: "pick"; session: PreviewSession; pick: PickList } | null {
+export async function openJob(id: string): Promise<{ kind: "preview"; session: PreviewSession } | { kind: "pick"; session: PreviewSession; pick: PickList } | null> {
   const job = jobs.find((item) => item.id === id);
-  if (!job?.session) return null;
-  if (job.pick) return { kind: "pick", session: job.session, pick: job.pick };
-  return { kind: "preview", session: job.session };
+  if (!job?.projectPath) return null;
+  await waitProjectWrites(job.projectPath);
+  const session = loadPreview(job.projectPath);
+  const pick = pendingPick(job.projectPath);
+  job.session = session;
+  job.pick = pick;
+  job.message = pick ? "要揀歌詞" : "可預覽，尚未匯出";
+  publish();
+  return pick ? { kind: "pick", session, pick } : { kind: "preview", session };
 }
 
 async function pump(): Promise<void> {
