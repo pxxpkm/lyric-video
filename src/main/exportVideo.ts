@@ -11,6 +11,8 @@ import { timingFromProject } from "../core/projectTiming";
 import type { PreviewLine, StoredTiming } from "../shared/preview";
 import { runCommand } from "./media";
 import type { TextMeasurement } from "../core/textWidth";
+import { commandFailure } from "./commandRunner";
+import { currentToolSignal } from "./toolOperations";
 
 export type ExportRequest = {
   projectPath: string;
@@ -104,22 +106,26 @@ export async function exportProject(
   let lastText = "";
   let buffer = "";
   const result = await runCommand("ffmpeg", args, (chunk) => {
-    buffer += chunk;
+    buffer = (buffer + chunk).slice(-64 * 1024);
     const lines = buffer.split(/\n/);
     buffer = lines.pop() ?? "";
     const text = readExportProgress(lines.join("\n"), request.durationMs);
     if (!text || text === lastText) return;
     lastText = text;
     onProgress(text);
-  }, folder);
-  if (result.code !== 0) {
+  }, folder, { timeoutMs: Math.min(24 * 60 * 60 * 1000, Math.max(30 * 60 * 1000, request.durationMs * 30 + 5 * 60 * 1000)), maxOutputBytes: 256 * 1024, stdoutMode: "tail" });
+  if (result.code !== 0 || currentToolSignal()?.aborted) {
     await rm(part, { force: true });
     const tail = result.stderr.trim().split(/\r?\n/).slice(-3).join(" ");
-    return { ok: false, error: tail || "匯出失敗" };
+    return { ok: false, error: currentToolSignal()?.aborted ? "已取消匯出，可以重試。" : (commandFailure(result) ?? tail) || "匯出失敗" };
   }
   try {
     await publishExport(part, outPath, request.mediaPath);
   } catch {
+    if (currentToolSignal()?.aborted) {
+      await rm(part, { force: true });
+      return { ok: false, error: "已取消匯出，可以重試。" };
+    }
     return { ok: false, error: `未能替換成片，原有目的檔未被刪除。新成片保留於：${part}。請關閉正在使用目的檔的程式，或另選檔名重試。` };
   }
   onProgress("匯出完成");

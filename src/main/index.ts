@@ -9,6 +9,7 @@ import { registerImportIpc } from "./ipc";
 import { ensureLogDir, logDir } from "./log";
 import { resourceRoot, setRoots } from "./paths";
 import { installCloseGuard } from "./closeGuard";
+import { cancelAllToolOperations } from "./toolOperations";
 
 setRoots({
   studio: () => (app.isPackaged ? join(app.getPath("userData"), "studio-data") : join(process.cwd(), "studio-data")),
@@ -73,6 +74,7 @@ process.on("uncaughtException", noteCrash);
 process.on("unhandledRejection", noteCrash);
 
 registerImportIpc();
+app.on("before-quit", cancelAllToolOperations);
 
 app.whenReady().then(async () => {
   protocol.handle("media", (request) => {

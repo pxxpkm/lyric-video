@@ -5,7 +5,7 @@ import { assFileName, mp4FileName } from "../core/exportName";
 import { exportProject, saveAssFile, type ExportRequest } from "./exportVideo";
 import { resourceRoot } from "./paths";
 import { browseProject, matchProject, resumeProject, useCandidate } from "./matchLyrics";
-import { enqueueFile, enqueueTest, enqueueUrls, listJobs, openJob } from "./queue";
+import { cancelJob, retryJob, enqueueFile, enqueueTest, enqueueUrls, listJobs, openJob } from "./queue";
 import { readSettings, writeSettings } from "./settings";
 import { describeFile, describeUrl, saveDownloaded, saveLocal } from "./importService";
 import { IMPORT_FAIL } from "./media";
@@ -20,8 +20,23 @@ import type { SaveRequest } from "../shared/import";
 import { waitProjectWrites } from "./projectFile";
 import { findSourceProjects } from "./sourceProjects";
 import { ensureProjectMedia, mediaRecoveryBusy } from "./projectMedia";
+import { runToolOperation, cancelToolOperation, toolOperationsBusy, throwIfToolCancelled } from "./toolOperations";
 
 let exportBusy = false;
+
+async function foreground<T>(event: IpcMainInvokeEvent, kind: "import" | "export", task: () => Promise<T>): Promise<T | { ok: false; error: string }> {
+  const key = `foreground:${event.sender.id}:${kind}`;
+  const cancel = () => { cancelToolOperation(key); };
+  const notify = (active: boolean) => { if (!event.sender.isDestroyed()) event.sender.send("tool:state", { kind, active }); };
+  try {
+    return await runToolOperation(key, async () => {
+      event.sender.once("destroyed", cancel);
+      notify(true);
+      try { return await task(); }
+      finally { event.sender.removeListener("destroyed", cancel); notify(false); }
+    });
+  } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "工具工作失敗，請重試。" }; }
+}
 
 function searchFields(value: unknown): { lockTitle: boolean; lockArtist: boolean; title: string; artist: string } | null {
   if (value == null) return null;
@@ -79,6 +94,10 @@ function exportRequest(value: unknown): ExportRequest | null {
 }
 
 export function registerImportIpc(): void {
+  ipcMain.handle("tool:cancel", (event, kind: unknown) => {
+    if (kind !== "import" && kind !== "export") return false;
+    return cancelToolOperation(`foreground:${event.sender.id}:${kind}`);
+  });
   ipcMain.handle("import:find-projects", (_event, source: unknown) => {
     if (!source || typeof source !== "object") throw new Error("沒有來源");
     const row = source as Record<string, unknown>;
@@ -86,15 +105,16 @@ export function registerImportIpc(): void {
     if (row.kind === "file" && typeof row.path === "string") return findSourceProjects(studioRoot(), { kind: "file", path: row.path });
     throw new Error("沒有來源");
   });
-  ipcMain.handle("preview:resume", async (event, projectPath: unknown) => {
+  ipcMain.handle("preview:resume", (event, projectPath: unknown) => foreground(event, "import", async () => {
     if (typeof projectPath !== "string") throw new Error("沒有專案");
     try {
       await ensureProjectMedia(projectPath, (text) => event.sender.send("import:progress", text));
+      throwIfToolCancelled();
       return await resumeProject(projectPath);
     } catch (error) { return { ok: false, error: error instanceof Error ? error.message : "未能讀取來源素材，原專案設定仍保留。" }; }
-  });
+  }));
   ipcMain.handle("cache:trash-all", async () => {
-    const idle = () => !exportBusy && !mediaRecoveryBusy() && !listJobs().some((job) => job.status === "running" || job.status === "waiting");
+    const idle = () => !exportBusy && !mediaRecoveryBusy() && !toolOperationsBusy() && !listJobs().some((job) => job.status === "running" || job.status === "waiting");
     if (!idle()) return "請等下載及匯出完成後再清除。";
     const entries = (await listCache(studioRoot())).filter((entry) => entry.clearable);
     if (!entries.length) return "沒有可安全清除的下載素材；未確認檔案會保留。";
@@ -113,27 +133,27 @@ export function registerImportIpc(): void {
   ipcMain.handle("cache:list", () => listCache(studioRoot()));
   ipcMain.handle("cache:trash", async (_event, path: unknown) => {
     if (typeof path !== "string") return "無效素材";
-    if (exportBusy || mediaRecoveryBusy() || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "請等素材補回、下載及匯出完成後再清除。";
+    if (exportBusy || mediaRecoveryBusy() || toolOperationsBusy() || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "請等素材補回、下載及匯出完成後再清除。";
     const entry = await cacheEntry(studioRoot(), path);
     if (!entry) return "素材已不存在，請重新整理。";
     const answer = await dialog.showMessageBox({ type: "warning", title: "清除下載素材", message: `將 ${entry.name} 移至資源回收筒？`, detail: `引用此檔的專案將無法播放或匯出；專案設定會保留。YouTube 專案下次編輯會先找本機副本，冇先重新下載並接回原專案。\n\n引用專案：\n${entry.projects.join("\n") || "未找到引用專案（可能是未完成下載）"}`, buttons: ["取消", "移至資源回收筒"], defaultId: 0, cancelId: 0 });
     if (answer.response !== 1) return "";
-    if (exportBusy || mediaRecoveryBusy() || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "有工作處理中，請稍後再試。";
+    if (exportBusy || mediaRecoveryBusy() || toolOperationsBusy() || listJobs().some((job) => job.status === "running" || job.status === "waiting")) return "有工作處理中，請稍後再試。";
     const current = await cacheEntry(studioRoot(), path);
     if (!current || current.bytes !== entry.bytes || current.modified !== entry.modified) return "素材已變更，請重新整理。";
     try { await shell.trashItem(path); return ""; } catch { return "未能移至資源回收筒，檔案可能正被使用。"; }
   });
-  ipcMain.handle("import:probe-url", async (_event, url: unknown, current: unknown) => {
+  ipcMain.handle("import:probe-url", (event, url: unknown, current: unknown) => foreground(event, "import", async () => {
     if (typeof url !== "string") return { ok: false, error: IMPORT_FAIL };
     return describeUrl(url, fields(current));
-  });
+  }));
 
-  ipcMain.handle("import:probe-file", async (_event, filePath: unknown, current: unknown) => {
+  ipcMain.handle("import:probe-file", (event, filePath: unknown, current: unknown) => foreground(event, "import", async () => {
     if (typeof filePath !== "string") return { ok: false, error: IMPORT_FAIL };
     return describeFile(filePath, fields(current));
-  });
+  }));
 
-  ipcMain.handle("import:download-url", async (event: IpcMainInvokeEvent, url: unknown, body: unknown) => {
+  ipcMain.handle("import:download-url", (event: IpcMainInvokeEvent, url: unknown, body: unknown) => foreground(event, "import", async () => {
     const parsed = request(body);
     if (typeof url !== "string" || !parsed) return { ok: false, error: IMPORT_FAIL };
     let lastSent = 0;
@@ -143,7 +163,7 @@ export function registerImportIpc(): void {
       lastSent = now;
       event.sender.send("import:progress", `正在下載 ${Math.floor(percent)}%`);
     });
-  });
+  }));
 
   ipcMain.handle("preview:test-clip", () => createTestClip());
   ipcMain.handle("preview:load", async (_event, projectPath: unknown) => {
@@ -152,7 +172,7 @@ export function registerImportIpc(): void {
     await ensureProjectMedia(projectPath);
     return loadPreview(projectPath);
   });
-  ipcMain.handle("export:video", async (event: IpcMainInvokeEvent, body: unknown) => {
+  ipcMain.handle("export:video", (event: IpcMainInvokeEvent, body: unknown) => foreground(event, "export", async () => {
     const request = exportRequest(body);
     if (!request) return { ok: false, error: "沒有可匯出的歌詞" };
     if (request.lines.length === 0) return { ok: false, error: "沒有可匯出的歌詞" };
@@ -180,7 +200,7 @@ export function registerImportIpc(): void {
     } finally {
       exportBusy = false;
     }
-  });
+  }));
   ipcMain.handle("export:ass", async (event: IpcMainInvokeEvent, body: unknown) => {
     const request = exportRequest(body);
     if (!request) return { ok: false, error: "沒有可匯出的歌詞" };
@@ -205,6 +225,8 @@ export function registerImportIpc(): void {
   ipcMain.handle("settings:get", () => readSettings());
   ipcMain.handle("settings:set", (_event, showTrans: unknown) => writeSettings({ showTrans: showTrans !== false }));
   ipcMain.handle("queue:list", () => listJobs());
+  ipcMain.handle("queue:cancel", (_event, id: unknown) => { if (typeof id === "string") cancelJob(id); return listJobs(); });
+  ipcMain.handle("queue:retry", (_event, id: unknown) => { if (typeof id === "string") retryJob(id); return listJobs(); });
   ipcMain.handle("queue:urls", (_event, text: unknown) => {
     if (typeof text === "string") enqueueUrls(text);
     return listJobs();
@@ -214,10 +236,10 @@ export function registerImportIpc(): void {
     return listJobs();
   });
   ipcMain.handle("queue:test", () => enqueueTest());
-  ipcMain.handle("queue:open", (event, id: unknown) => {
+  ipcMain.handle("queue:open", (event, id: unknown) => foreground(event, "import", async () => {
     if (typeof id !== "string") return null;
     return openJob(id, (text) => event.sender.send("import:progress", text));
-  });
+  }));
   ipcMain.handle("lyric:match", async (event, projectPath: unknown) => {
     if (typeof projectPath !== "string") return { ok: false, error: "沒有專案" };
     event.sender.send("import:progress", "正在搜尋歌詞");
@@ -264,9 +286,9 @@ export function registerImportIpc(): void {
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   });
 
-  ipcMain.handle("import:save-file", async (_event, filePath: unknown, body: unknown) => {
+  ipcMain.handle("import:save-file", (event, filePath: unknown, body: unknown) => foreground(event, "import", async () => {
     const parsed = request(body);
     if (typeof filePath !== "string" || !parsed) return { ok: false, error: IMPORT_FAIL };
     return saveLocal(filePath, parsed);
-  });
+  }));
 }

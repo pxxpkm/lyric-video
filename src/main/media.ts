@@ -1,4 +1,5 @@
-import { spawn } from "node:child_process";
+import { runCommand, commandFailure } from "./commandRunner";
+export { runCommand, type CommandResult } from "./commandRunner";
 import { existsSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -41,37 +42,6 @@ export function importFailure(stderr: string): string {
   return FAIL;
 }
 
-export type CommandResult = { code: number; stdout: string; stderr: string };
-
-export function runCommand(
-  command: string,
-  args: string[],
-  onText?: (chunk: string) => void,
-  cwd?: string,
-): Promise<CommandResult> {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { windowsHide: true, cwd });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-      onText?.(chunk);
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-      onText?.(chunk);
-    });
-    child.on("error", (error) => {
-      resolve({ code: -1, stdout, stderr: `${stderr}\n${error.message}` });
-    });
-    child.on("close", (code) => {
-      resolve({ code: code ?? -1, stdout, stderr });
-    });
-  });
-}
-
 export async function probeUrl(url: string): Promise<
   { ok: true; id: string; title: string; uploader: string; durationMs: number | null } | { ok: false; error: string }
 > {
@@ -82,8 +52,8 @@ export async function probeUrl(url: string): Promise<
     "--no-warnings",
     "--dump-json",
     url,
-  ]);
-  if (result.code !== 0) return { ok: false, error: importFailure(result.stderr) };
+  ], undefined, undefined, { timeoutMs: 60_000 });
+  if (result.code !== 0) return { ok: false, error: commandFailure(result) ?? importFailure(result.stderr) };
   const dump = readYtdlpDump(result.stdout);
   if (!dump) return { ok: false, error: FAIL };
   return { ok: true, ...dump };
@@ -98,7 +68,9 @@ export async function probeFile(filePath: string): Promise<number | null> {
     "-of",
     "json",
     filePath,
-  ]);
+  ], undefined, undefined, { timeoutMs: 30_000, maxOutputBytes: 1024 * 1024 });
+  const failed = commandFailure(result);
+  if (failed) throw new Error(failed);
   if (result.code !== 0) return null;
   return readFfprobeDuration(result.stdout);
 }
@@ -126,16 +98,16 @@ export async function downloadUrl(
 
   let buffer = "";
   const result = await runCommand(ytdlpCommand(), args, (chunk) => {
-    buffer += chunk;
+    buffer = (buffer + chunk).slice(-64 * 1024);
     const lines = buffer.split(/\r|\n/);
     buffer = lines.pop() ?? "";
     for (const line of lines) {
       const percent = readDownloadPercent(line);
       if (percent != null) onPercent?.(percent);
     }
-  });
+  }, undefined, { timeoutMs: 2 * 60 * 60 * 1000, maxOutputBytes: 256 * 1024, stdoutMode: "tail" });
   await recordDownloadFiles(directory);
-  if (result.code !== 0) return { ok: false, error: importFailure(result.stderr) };
+  if (result.code !== 0) return { ok: false, error: commandFailure(result) ?? importFailure(result.stderr) };
 
   const marked = [...result.stdout.matchAll(/^FILE:(.+)$/gm)].map((match) => match[1].trim());
   const printed = marked.filter((line) => line.length > 0).at(-1);

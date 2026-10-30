@@ -37,6 +37,8 @@ export function App() {
   const [error, setError] = useState("");
   const [savedPath, setSavedPath] = useState("");
   const [busy, setBusy] = useState(false);
+  const [toolActive, setToolActive] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [screen, setScreen] = useState<"import" | "preview" | "pick">("import");
   const [showTrans, setShowTrans] = useState(true);
   const [queueText, setQueueText] = useState("");
@@ -45,6 +47,9 @@ export function App() {
   const [pick, setPick] = useState<PickList | null>(null);
 
   useEffect(() => window.lyric?.onCloseRequest(flushActiveSave), []);
+  useEffect(() => window.lyric?.onToolState((state) => {
+    if (state.kind === "import") { setToolActive(state.active); if (!state.active) setCancelling(false); }
+  }), []);
 
   useEffect(() => {
     if (!window.lyric) return;
@@ -272,6 +277,10 @@ export function App() {
       <h1>歌詞影片</h1>
       <button disabled={busy || jobs.some((job) => job.status === "running" || job.status === "waiting")} onClick={() => setShowCache(true)}>下載素材／清除緩存</button>
       <p className="status">{status}</p>
+      {toolActive ? <button disabled={cancelling} onClick={() => {
+        setCancelling(true); setStatus("正在停止工具，請稍候…");
+        void window.lyric.cancelTool("import").catch(() => { setCancelling(false); setError("未能發出取消，請再試。"); });
+      }}>{cancelling ? "正在取消" : "取消讀取／下載"}</button> : null}
       <div className="card">
         <label>
           連結
@@ -290,6 +299,7 @@ export function App() {
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             event.preventDefault();
+            if (busy) return;
             const file = event.dataTransfer.files[0];
             if (file) void readFile(file);
           }}
@@ -405,21 +415,25 @@ export function App() {
         </button>
         <div className="queue">
           {jobs.length === 0 ? <p className="meta">尚未排入</p> : null}
-          {jobs.map((job) => (
+          {jobs.map((job) => <div key={job.id}>
             <button
               key={job.id}
               type="button"
               className="queue-item"
               disabled={job.status !== "ready"}
               onClick={() => {
-                void window.lyric.openJob(job.id).then(showMatch).catch((error: unknown) => setError(error instanceof Error ? error.message : "讀不到最新專案，請確認檔案仍在，然後再試。"));
+                if (busy) return;
+                setBusy(true);
+                void window.lyric.openJob(job.id).then(showMatch).catch((error: unknown) => setError(error instanceof Error ? error.message : "讀不到最新專案，請確認檔案仍在，然後再試。")).finally(() => setBusy(false));
               }}
             >
               <span>
                 {job.label} · {job.message}
               </span>
             </button>
-          ))}
+            {job.status === "running" || job.status === "waiting" ? <button onClick={() => void window.lyric.cancelQueueJob(job.id).then(setJobs)}>取消</button> : null}
+            {job.status === "failed" || job.status === "cancelled" ? <button onClick={() => void window.lyric.retryQueueJob(job.id).then(setJobs)}>重試</button> : null}
+          </div>)}
         </div>
         {error ? <p className="error">{error}</p> : null}
         {savedPath ? <p className="meta">專案：{savedPath}</p> : null}

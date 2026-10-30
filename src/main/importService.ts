@@ -8,6 +8,7 @@ import { downloadUrl, IMPORT_FAIL, probeFile, probeUrl } from "./media";
 import { studioRoot } from "./paths";
 import { findCachedMedia } from "./mediaCache";
 import type { ProbeResult, SaveRequest, SaveResult } from "../shared/import";
+import { throwIfToolCancelled } from "./toolOperations";
 
 export { studioRoot };
 
@@ -66,11 +67,13 @@ export async function saveDownloaded(
   if (!/^https?:\/\//i.test(trimmed)) return { ok: false, error: "請貼上 http 連結，或改拖本機檔。" };
   const folder = projectDir("yt");
   const cached = await findCachedMedia(studioRoot(), trimmed, request.mode, probeFile);
+  throwIfToolCancelled();
   const downloaded = cached ? { ok: true as const, mediaPath: cached.mediaPath }
     : await downloadUrl(trimmed, folder, request.mode, onPercent);
   if (!downloaded.ok) return downloaded;
   if (cached) onPercent?.(100);
   const durationMs = cached?.durationMs ?? (await probeFile(downloaded.mediaPath)) ?? request.durationMs;
+  throwIfToolCancelled();
   const projectPath = join(folder, "project.json");
   await saveProject(
     projectPath,
@@ -90,6 +93,7 @@ export async function saveLocal(filePath: string, request: SaveRequest): Promise
   const folder = projectDir("file");
   await mkdir(folder, { recursive: true });
   const durationMs = (await probeFile(filePath)) ?? request.durationMs;
+  throwIfToolCancelled();
   const projectPath = join(folder, "project.json");
   await saveProject(
     projectPath,

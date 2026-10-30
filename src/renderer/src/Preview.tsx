@@ -66,6 +66,8 @@ export function Preview({
   const [debug, setDebug] = useState(true);
   const [playing, setPlaying] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportToolActive, setExportToolActive] = useState(false);
+  const [cancellingExport, setCancellingExport] = useState(false);
   const [savingAss, setSavingAss] = useState(false);
   const [exportText, setExportText] = useState("");
   const [pos, setPos] = useState(0);
@@ -124,6 +126,9 @@ export function Preview({
   }, [session]);
 
   useEffect(() => window.lyric.onExportProgress(setExportText), []);
+  useEffect(() => window.lyric.onToolState((state) => {
+    if (state.kind === "export") { setExportToolActive(state.active); if (!state.active) setCancellingExport(false); }
+  }), []);
   useEffect(() => { if (look.showOriginal === false && dragTarget === "orig") setDragTarget("trans"); }, [look.showOriginal, dragTarget]);
 
   useEffect(() => saver.subscribe(setSaveStatus), [saver]);
@@ -479,6 +484,10 @@ export function Preview({
                 </button>
               </div>
             </div>
+            {exportToolActive ? <button disabled={cancellingExport} onClick={() => {
+              setCancellingExport(true); setExportText("正在停止轉碼，請稍候…");
+              void window.lyric.cancelTool("export").catch(() => { setCancellingExport(false); setExportText("未能發出取消，請再試。"); });
+            }}>{cancellingExport ? "正在取消" : "取消匯出"}</button> : null}
             {exportText ? <p className="meta">{exportText}</p> : null}
           </div>
         </section>

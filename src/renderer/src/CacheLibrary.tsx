@@ -8,7 +8,12 @@ export function CacheLibrary({ onClose, onOpenProject }: { onClose: () => void; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [progress, setProgress] = useState("");
+  const [toolActive, setToolActive] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   useEffect(() => window.lyric.onProgress(setProgress), []);
+  useEffect(() => window.lyric.onToolState((state) => {
+    if (state.kind === "import") { setToolActive(state.active); if (!state.active) setCancelling(false); }
+  }), []);
   async function refresh() {
     setBusy(true);
     setProgress("");
@@ -44,6 +49,10 @@ export function CacheLibrary({ onClose, onOpenProject }: { onClose: () => void; 
     <button disabled={busy} onClick={() => void refresh()}>重新整理</button>
     {" "}<button disabled={busy || !rows.some((row) => row.clearable)} onClick={() => void remove()}>全部清除…</button>
     {busy ? <p role="status">{progress || "處理中…"}</p> : null}
+    {toolActive ? <button disabled={cancelling} onClick={() => {
+      setCancelling(true); setProgress("正在停止補回素材…");
+      void window.lyric.cancelTool("import").catch(() => { setCancelling(false); setError("未能發出取消，請再試。"); });
+    }}>{cancelling ? "正在取消" : "取消補回素材"}</button> : null}
     {error ? <p role="alert">{error}</p> : null}
     <div style={{ overflowX: "auto", marginTop: 16 }}>
       <table style={{ width: "100%", textAlign: "left", borderCollapse: "collapse" }}>

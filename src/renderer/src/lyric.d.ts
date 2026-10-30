@@ -5,6 +5,10 @@ import type { PreviewSession } from "../../shared/preview";
 type Fields = { lockTitle: boolean; lockArtist: boolean; title: string; artist: string };
 
 export type LyricBridge = {
+  cancelTool: (kind: "import" | "export") => Promise<boolean>;
+  onToolState: (callback: (state: { kind: "import" | "export"; active: boolean }) => void) => () => void;
+  cancelQueueJob: (id: string) => Promise<QueueJob[]>;
+  retryQueueJob: (id: string) => Promise<QueueJob[]>;
   findSourceProjects: (source: import("../../shared/import").ImportSource) => Promise<import("../../shared/import").SavedSourceProject[]>;
   onCloseRequest: (callback: () => Promise<boolean>) => () => void;
   listCache: () => Promise<import("../../shared/cache").CacheEntry[]>;
@@ -75,7 +79,7 @@ export type LyricBridge = {
 export type QueueJob = {
   id: string;
   label: string;
-  status: "waiting" | "running" | "ready" | "failed";
+  status: "waiting" | "running" | "ready" | "failed" | "cancelled";
   message: string;
   projectPath?: string;
 };

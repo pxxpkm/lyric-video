@@ -7,11 +7,12 @@ import { waitProjectWrites } from "./projectFile";
 import { ensureProjectMedia } from "./projectMedia";
 import type { PickList } from "../shared/pick";
 import type { PreviewSession } from "../shared/preview";
+import { runToolOperation, cancelToolOperation, throwIfToolCancelled } from "./toolOperations";
 
 export type QueueJob = {
   id: string;
   label: string;
-  status: "waiting" | "running" | "ready" | "failed";
+  status: "waiting" | "running" | "ready" | "failed" | "cancelled";
   message: string;
   projectPath?: string;
   session?: PreviewSession;
@@ -20,6 +21,26 @@ export type QueueJob = {
 
 const jobs: QueueJob[] = [];
 let pumping = false;
+const cancelling = new Set<string>();
+
+export function cancelJob(id: string): void {
+  const job = jobs.find(item => item.id === id);
+  if (!job || (job.status !== "waiting" && job.status !== "running")) return;
+  if (job.status === "waiting") { job.status = "cancelled"; job.message = "已取消，可重試"; }
+  else {
+    cancelling.add(id);
+    job.message = "正在取消";
+    cancelToolOperation(`queue:${id}`);
+  }
+  publish();
+}
+
+export function retryJob(id: string): void {
+  const job = jobs.find(item => item.id === id);
+  if (!job || (job.status !== "failed" && job.status !== "cancelled")) return;
+  job.status = "waiting"; job.message = "等候重試";
+  publish(); void pump();
+}
 
 function publish(): void {
   const snapshot = jobs.map(({ session: _session, pick: _pick, ...job }) => job);
@@ -93,8 +114,14 @@ async function pump(): Promise<void> {
   job.message = "處理中";
   publish();
   try {
+    await runToolOperation(`queue:${job.id}`, async () => {
+    if (job.projectPath) {
+      await finishSaved(job, job.projectPath, job.label);
+      return;
+    }
     if (job.label.startsWith("http")) {
       const probed = await describeUrl(job.label, { lockTitle: false, lockArtist: false, title: "", artist: "" });
+      throwIfToolCancelled();
       if (!probed.ok) throw new Error(probed.error);
       const saved = await saveDownloaded(job.label, {
         title: probed.draft.title,
@@ -119,17 +146,22 @@ async function pump(): Promise<void> {
       if (!saved.ok) throw new Error(saved.error);
       await finishSaved(job, saved.projectPath, described?.title || job.label);
     }
+    });
   } catch (error) {
-    job.status = "failed";
-    job.message = error instanceof Error ? error.message : "失敗";
+    job.status = cancelling.has(job.id) ? "cancelled" : "failed";
+    job.message = cancelling.has(job.id) ? "已取消，可重試" : error instanceof Error ? error.message : "失敗";
   }
+  cancelling.delete(job.id);
   pumping = false;
   publish();
   void pump();
 }
 
 async function finishSaved(job: QueueJob, projectPath: string, label: string): Promise<void> {
+  job.projectPath = projectPath;
+  throwIfToolCancelled();
   const matched = await matchProject(projectPath);
+  throwIfToolCancelled();
   job.session = matched.session;
   job.pick = matched.kind === "pick" ? matched.pick : undefined;
   job.projectPath = projectPath;

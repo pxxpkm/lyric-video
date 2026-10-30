@@ -7,6 +7,7 @@ import { exportProject, type ExportRequest } from "../../src/main/exportVideo";
 import { defaultTiming } from "../../src/core/timing";
 import { timingForProject } from "../../src/core/projectTiming";
 import { runCommand } from "../../src/main/media";
+import { cancelToolOperation, runToolOperation } from "../../src/main/toolOperations";
 
 vi.mock("../../src/main/media", () => ({ runCommand: vi.fn() }));
 const dirs: string[] = [];
@@ -67,6 +68,21 @@ it("rename 失敗保留舊成片", async () => {
   const f = await fixture();
   await expect(publishExport(join(f.dir, "missing.part.mp4"), f.outPath, f.mediaPath)).rejects.toThrow();
   expect(await readFile(f.outPath, "utf8")).toBe("old");
+});
+
+it("取消後即使工具回報成功亦不替換舊片，清本次暫存並可重試", async () => {
+  const f = await fixture();
+  let attempt = 0;
+  vi.mocked(runCommand).mockImplementation(async (_cmd, args) => {
+    await writeFile(args[args.length - 1], "new");
+    if (attempt++ === 0) cancelToolOperation("export:test");
+    return { code: 0, stdout: "", stderr: "" };
+  });
+  const result = await runToolOperation("export:test", () => exportProject(f.request, f.dir, () => {}));
+  expect(result.ok).toBe(false);
+  expect(await readFile(f.outPath, "utf8")).toBe("old");
+  expect((await readdir(f.dir)).filter(name => name.endsWith(".part.mp4"))).toEqual([]);
+  expect((await runToolOperation("export:test", () => exportProject(f.request, f.dir, () => {}))).ok).toBe(true);
 });
 
 it("轉碼期間目的改為來源硬連結，拒絕換入並保留新成片；重試使用新暫存", async () => {

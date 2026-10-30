@@ -1,6 +1,14 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("lyric", {
+  cancelTool: (kind: "import" | "export") => ipcRenderer.invoke("tool:cancel", kind),
+  onToolState: (callback: (state: { kind: "import" | "export"; active: boolean }) => void) => {
+    const listener = (_event: unknown, state: { kind: "import" | "export"; active: boolean }) => callback(state);
+    ipcRenderer.on("tool:state", listener);
+    return () => ipcRenderer.removeListener("tool:state", listener);
+  },
+  cancelQueueJob: (id: string) => ipcRenderer.invoke("queue:cancel", id),
+  retryQueueJob: (id: string) => ipcRenderer.invoke("queue:retry", id),
   findSourceProjects: (source: unknown) => ipcRenderer.invoke("import:find-projects", source),
   onCloseRequest: (callback: () => Promise<boolean>) => {
     const listener = async (_event: unknown, token: string) => {

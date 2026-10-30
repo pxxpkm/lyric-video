@@ -1,5 +1,6 @@
 import { realpath, rename, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { throwIfToolCancelled } from "./toolOperations";
 
 function pathKey(path: string): string {
   const full = resolve(path);
@@ -25,6 +26,7 @@ export async function assertExportDestination(mediaPath: string, outPath: string
 
 export async function publishExport(part: string, outPath: string, mediaPath: string): Promise<void> {
   await assertExportDestination(mediaPath, outPath);
+  throwIfToolCancelled();
   // 暫存與目的檔在同一資料夾。直接 rename 替換；失敗時不可先刪舊成片。
   await rename(part, outPath);
 }

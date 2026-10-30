@@ -6,6 +6,7 @@ import { downloadUrl, probeFile } from "./media";
 import { findCachedMedia, youtubeId } from "./mediaCache";
 import { studioRoot } from "./paths";
 import { updateProject, waitProjectWrites } from "./projectFile";
+import { throwIfToolCancelled } from "./toolOperations";
 
 type SourceMedia = { mediaPath: string };
 const repairs = new Map<string, Promise<void>>();
@@ -34,12 +35,14 @@ async function recoverSource(url: string, mode: "video" | "audio", progress: (te
   const pending = (async () => {
     progress("來源素材已遺失，正在尋找可重用的本機副本");
     const cached = await findCachedMedia(studioRoot(), url, mode, probeFile);
+    throwIfToolCancelled();
     if (cached) return cached;
     progress("正在重新下載來源素材，專案設定會保留");
     const directory = join(studioRoot(), `yt-recovered-${randomUUID()}`);
     const downloaded = await downloadUrl(url, directory, mode, (percent) => progress(`正在補回來源素材 ${Math.floor(percent)}%`));
     if (!downloaded.ok) throw new Error(`未能補回來源素材：${downloaded.error} 原專案設定仍然保留。`);
     const duration = await probeFile(downloaded.mediaPath);
+    throwIfToolCancelled();
     if (!await available(downloaded.mediaPath) || duration == null || !Number.isFinite(duration) || duration <= 0) throw new Error("下載的來源素材未能讀取，沒有更改專案設定。請稍後再試。");
     return downloaded;
   })();
@@ -59,7 +62,9 @@ export function ensureProjectMedia(projectPath: string, progress: (text: string)
     if (project.source.kind !== "youtube") throw new Error("本機來源檔已被刪除或移走。請先從資源回收筒還原到原本位置，再開啟這份專案；原有設定仍保留。");
     if (!/^https?:\/\//i.test(project.source.url)) throw new Error("專案沒有可用的來源連結，未能自動補回素材；原有設定仍保留。");
     const media = await recoverSource(project.source.url, project.source.mode, progress);
+    throwIfToolCancelled();
     await updateProject(projectPath, async (latest) => {
+      throwIfToolCancelled();
       if (latest.source.kind !== project.source.kind || latest.source.url !== project.source.url || latest.source.mode !== project.source.mode) throw new Error("專案來源已變更，請重新開啟。沒有重設編輯內容。");
       // 只補來源路徑；下載期間的新編輯及已有人手設定一律保留。
       if (!await available(latest.source.mediaPath)) latest.source.mediaPath = media.mediaPath;
