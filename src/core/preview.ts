@@ -28,7 +28,8 @@ export type PreviewFrame = {
 
 export function lyricClockMs(mediaMs: number, offsetMs: number, rate: number): number {
   const safe = !Number.isFinite(rate) || rate <= 0 ? 1 : rate;
-  return Math.max(0, (mediaMs - offsetMs) * safe);
+  // 正延遲前仍是負歌詞時間；截成零會令零秒歌詞提早被選中。
+  return (mediaMs - offsetMs) * safe;
 }
 
 /** 這句在播放時間上出現的位置。正的延遲會把下列時間往後推。 */
