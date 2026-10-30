@@ -6,6 +6,12 @@
 
 ## 本專案已遇到
 
+### 2026-10-30 打包版測試的偵錯上下文與退出等待
+
+- 現象：隔離測試在 Runtime.evaluate 使用 require 報未定義，測試結果成功後 app.exit 仍等待 debugger 斷線，最後測試計時器逾時。
+- 原因：require 只在暫停的 CommonJS module frame 有效；Electron／Node 退出時偵錯器仍連線會等待。
+- 對策：測試在 module frame 提供所需 helper，完成後發送退出並關閉 WebSocket 再等程序結束。測試需在 app ready 前設定隔離 userData／APPDATA，不能拿真實個人目錄做煙霧測試。最終包已重跑成功；影響0.95打包驗證，產品不需要偵錯參數。
+
 ### 2026-10-30 工具取消要等待真正退出，下載日誌不能無限累積
 
 - 現象：原 runCommand 無取消及時限，stdout／stderr 持續累積；只 kill 下載器亦可能留低其 ffmpeg 子程序。

@@ -37,7 +37,7 @@ export function importFailure(stderr: string): string {
     return "yt-dlp 無法啟動，請檢查工具安裝。亦可以改拖本機檔。";
   }
   if (/Sign in to confirm|login required|confirm you.re not a bot/i.test(stderr)) {
-    return "YouTube 要求登入或驗證，暫時無法讀取。請在瀏覽器確認，或改拖本機檔。";
+    return "YouTube 要求登入或驗證，暫時無法讀取。請在瀏覽器完成確認，再到首頁「YouTube 登入（選用）」選擇最新的 Netscape Cookies 檔；亦可以改拖本機檔。Cookies 不保證能通過驗證。";
   }
   return FAIL;
 }

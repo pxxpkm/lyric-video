@@ -47,6 +47,16 @@ h1 {
   gap: 12px;
 }
 
+.cookie-settings {
+  width: min(640px, 100%);
+  margin-bottom: 8px;
+}
+
+.cookie-settings summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+
 main.studio {
   width: 100%;
   height: 100vh;

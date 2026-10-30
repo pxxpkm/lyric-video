@@ -6,6 +6,8 @@
 
 ## 現在做到哪
 
+**0.95 打包及 Cookies 設定（已交付，使用者授權發佈，2026-10-30）**：使用者在交付安裝包後明確要求「上傳 GitHub」，依此授權提交0.95及建立Release，不將代理驗證冒稱為用家親自安裝。45檔367項測試、TypeScript、dist及隔離打包版Cookie／匯出核對通過。公開附件 LyricVideo-Setup-0.95.0.exe 為122204692 bytes，SHA256 e5e827c547810082a6dc628b1b5bec88eddb5d23c16b9729b93ba395da198826；連同SHA256SUMS.txt發佈至v0.95.0。沿用外部工具依賴、未簽署、不含個人資料，結果見本輪Git及Release工具核對。
+
 **2026-10-30 GitHub 同步**：使用者要求推送。fetch 確認遠端無新增、本機領先 5 個已驗收修復提交；本輪同步 R04 344a942、R06 a4652dc、英文 231a5d5、R07 bfada49、R10 e8ba941 及本次文件紀錄到 origin/master。結果以 git push 與分支狀態為準；以下「未推送」是各步完成當時狀態。沒有新產品步驟，不打包或改版本。
 
 **R10 外部工具工作控制（完成，2026-10-30 使用者確認通過）**：R07 已驗收並提交 bfada49。新增可取消的工具工作、按探測／下載／轉碼設定逾時、限制 stdout／stderr 與進度緩衝；Windows 只終止本程式啟動的工具 PID 及子程序。直接下載／匯出及佇列提供取消與重試，取消後不替換成片或重設已保存設定。42 檔、354 項離線測試、TypeScript、build 通過，真實 ffmpeg 取消／保留／重試檢查通過。使用者明確回覆「通過了。」提交訊息「新增工具取消、逾時與輸出緩衝限制」。未打包／推送。
@@ -103,6 +105,23 @@ M0 至 M8、0.6 至 0.15，以及後面的修正，都已完成並推上 GitHub�
 M8 已放進 beta 0.5。你沒有親口說「M8 可以」。不要為了補這句話再提交一次。
 
 ## 過程紀錄
+
+### 2026-10-30 使用者要求上傳0.95至GitHub
+
+- 使用者交付後明確要求「上傳 GitHub」，授權本步提交及Release發佈；沒有額外宣稱其已親自安裝驗收。fetch核對遠端無新增。GitHub連接器沒有Release附件上傳能力，使用已登入的本機GitHub CLI處理Release，源碼以Git同步。
+- README改為正式Release下載位置後重建，產品程式沒有新增變動；重新核對asar545項無使用者資料、version0.95.0，隔離打包版Cookie匯入／清除及本機匯出再過。公開附件採無空格檔名 LyricVideo-Setup-0.95.0.exe，122204692 bytes，SHA256 e5e827c547810082a6dc628b1b5bec88eddb5d23c16b9729b93ba395da198826，校驗碼檔指向相同名稱。舊hash屬上一個內附本機說明的包，以本段為準。
+- 只提交程式、測試、README、版本及授權文件；安裝檔與校驗碼只作Release附件，release／studio-data／Cookies／tools／exass不入Git。先建立草稿並核對附件後才公開，tag v0.95.0指向本步產品提交。發布說明列出外部工具需求、未簽署及資料位置差異；沒有自動更新功能。
+
+### 2026-10-30 0.95 打包及 Cookies 入口（待人手驗證）
+
+- 使用者要求「如果打包，就幫我打包成0.95版本」，其後明確選擇加入 Cookies 檔選擇及狀態提示。package.json／lock 版本改 0.95.0，NSIS installerLanguages=zh_TW、language=1028，保留 appId、資料目錄及可選安裝位置。打包至獨立 release/0.95.0，不覆用舊 0.0.0 產物；不自動上傳 Release、不新增工具內置或自動更新程式。
+- Cookies：首頁新增可展開「YouTube 登入（選用）」及狀態，選本機 Netscape .txt；main 檢查格式、YouTube Cookie、有效期及 8MB 上限，原子寫到目前 studioRoot/cookies.txt，來源檔不改。JSON／損壞／已過期／過大檔不覆蓋舊副本，提示不含 Cookie 名稱或值；清除需確認，只刪本程式副本。工具／佇列忙碌不能更改。支援 HttpOnly、BOM、CRLF、session Cookie，已設定不等於登入獲 YouTube 接受；遭登入驗證時提示入口與本機檔後備，沒有繞過驗證。
+- 分發資源補齊：昭源字體 SIL OFL、OpenCC Apache 2.0 原文從官方倉庫取得，React／React DOM／Scheduler／Zod 授權從已安裝套件原文複製，附第三方來源說明及 README。包內只有 out、runtime 依賴、字體、三份字典及授權／說明；asar 掃描 545 項，沒有 studio-data、cookies.txt、tools、exass 或 .git。Electron／Chromium LICENSE 原有框架檔保留。沒有替本專案另選程式碼授權。
+- 45 檔 367 項離線測試及 TypeScript 通過；新增 13 項涵蓋格式／有效期／壞檔不漏值、原檔與舊副本保留、清除只刪副本、過大檔拒絕、原手動檔相容、選檔／清除取消，以及工具忙碌不開對話框。build／dist 成功；只有既有 importService 匯入提示、缺作者欄及預設 Electron 圖示提示，沒有阻塞。沒有下載真實影片或讀取使用者 Cookies。
+- 產物：release/0.95.0/LyricVideo Setup 0.95.0.exe，122204653 bytes（約122MB），版本0.95.0，x64 PE；SHA-256 bb863a69e9df48f9a31ad7c04f5f2222c0d2ca85b9ffc08d5a10c05b8dbe28ab，另寫同目錄 SHA256SUMS.txt。Authenticode 狀態 NotSigned；builder 雖顯示 signing with signtool，不能當成已簽署。NSIS debug 腳本確認 TradChinese。ffmpeg／ffprobe／yt-dlp 及 JavaScript runtime 仍依賴外部安裝，本次沒有打入 tools。
+- 打包版實測：以 release/0.95.0/win-unpacked/LyricVideo.exe 啟動獨立隱藏測試程序，主程式啟動前改用 studio-data/packaged-smoke-0.95.0/profile 及隔離 APPDATA；沒有安裝程式或動真實 AppData。實際 renderer 展開 Cookies 設定、點選匯入假 Netscape 檔、狀態 ready、Cookie 值不出現在 DOM、確認清副本、原假檔仍在；建立十秒自製測試片並經實際 IPC／ffmpeg 匯出成功，ffprobe 有聲畫及10秒片長，app.getVersion=0.95.0、isPackaged=true。看過最終收起入口的畫面，原匯入區仍可直接操作。report.json／home.png／測試影音在 studio-data，全部忽略。
+- 測試腳本最初在非 module 偵錯上下文使用 require，以及退出時未先斷開 debugger，造成腳本收尾錯誤／逾時；已修正測試腳本並對最終重建包重跑，完整成功且測試程序正常退出。產品程式無需此偵錯連線，沒有強制關閉用家原有程序。
+- 人手驗證：安裝或開 win-unpacked 的0.95版，確認繁體中文介面及 Cookies 入口；無 Cookies 仍可先試讀取，選用家自行匯出的有效 Netscape 檔後應顯示已設定，取消選檔不改原設定，清副本有確認；測試本機影音預覽及匯出，正常退出再開設定應保留。安裝版專案目錄與開發版分開，不會自動搬移。未簽署及外部工具依賴已在 README 說明。未驗收前不提交／推送，不開下一步。
 
 ### 2026-10-30 同步本輪已驗收修復到 GitHub
 

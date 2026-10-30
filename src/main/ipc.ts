@@ -21,6 +21,7 @@ import { waitProjectWrites } from "./projectFile";
 import { findSourceProjects } from "./sourceProjects";
 import { ensureProjectMedia, mediaRecoveryBusy } from "./projectMedia";
 import { runToolOperation, cancelToolOperation, toolOperationsBusy, throwIfToolCancelled } from "./toolOperations";
+import { cookieStatus, importCookieFile, clearCookieFile } from "./cookieFile";
 
 let exportBusy = false;
 
@@ -94,6 +95,28 @@ function exportRequest(value: unknown): ExportRequest | null {
 }
 
 export function registerImportIpc(): void {
+  const cookieBusy = () => toolOperationsBusy() || mediaRecoveryBusy() || listJobs().some(job => job.status === "waiting" || job.status === "running");
+  ipcMain.handle("cookies:status", () => cookieStatus());
+  ipcMain.handle("cookies:select", async (event) => {
+    if (cookieBusy()) return { ok: false, error: "請等讀取、下載及匯出停止後再更改 Cookies。" };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options = { title: "選擇 Netscape Cookies 檔", filters: [{ name: "Cookies 文字檔", extensions: ["txt"] }], properties: ["openFile"] as ["openFile"] };
+    const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, cancelled: true };
+    if (cookieBusy()) return { ok: false, error: "有工具工作正在處理，請停止後再更改 Cookies。" };
+    try { return { ok: true, status: await importCookieFile(picked.filePaths[0]) }; }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : "未能匯入 Cookies，原有設定已保留。" }; }
+  });
+  ipcMain.handle("cookies:clear", async (event) => {
+    if (cookieBusy()) return { ok: false, error: "請等讀取、下載及匯出停止後再清除 Cookies。" };
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const options = { type: "question" as const, title: "清除程式的 Cookies", message: "清除程式保存的 Cookies 副本？", detail: "只清除本程式資料目錄的副本，不會刪除你原本匯出的檔案，亦不會登出瀏覽器。", buttons: ["取消", "清除副本"], defaultId: 0, cancelId: 0 };
+    const answer = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+    if (answer.response !== 1) return { ok: false, cancelled: true };
+    if (cookieBusy()) return { ok: false, error: "有工具工作正在處理，請停止後再清除 Cookies。" };
+    try { return { ok: true, status: await clearCookieFile() }; }
+    catch { return { ok: false, error: "未能清除程式的 Cookies，請稍後再試。" }; }
+  });
   ipcMain.handle("tool:cancel", (event, kind: unknown) => {
     if (kind !== "import" && kind !== "export") return false;
     return cancelToolOperation(`foreground:${event.sender.id}:${kind}`);

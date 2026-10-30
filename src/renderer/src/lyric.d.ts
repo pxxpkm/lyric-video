@@ -5,6 +5,9 @@ import type { PreviewSession } from "../../shared/preview";
 type Fields = { lockTitle: boolean; lockArtist: boolean; title: string; artist: string };
 
 export type LyricBridge = {
+  cookieStatus: () => Promise<import("../../core/cookies").CookieStatus>;
+  selectCookies: () => Promise<{ ok: true; status: import("../../core/cookies").CookieStatus } | { ok: false; error?: string; cancelled?: boolean }>;
+  clearCookies: () => Promise<{ ok: true; status: import("../../core/cookies").CookieStatus } | { ok: false; error?: string; cancelled?: boolean }>;
   cancelTool: (kind: "import" | "export") => Promise<boolean>;
   onToolState: (callback: (state: { kind: "import" | "export"; active: boolean }) => void) => () => void;
   cancelQueueJob: (id: string) => Promise<QueueJob[]>;

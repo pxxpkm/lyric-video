@@ -1,5 +1,19 @@
 # 交接
 
+## 2026-10-30 使用者授權上傳0.95
+
+用家在0.95交付後明確要求「上傳 GitHub」，依此授權提交產品及建立v0.95.0 Release，不冒稱其已親自安裝驗收。README內附說明改正式Release位置後重建，公開附件 LyricVideo-Setup-0.95.0.exe（122204692 bytes），SHA256 e5e827c547810082a6dc628b1b5bec88eddb5d23c16b9729b93ba395da198826；SHA256SUMS.txt已對應公開檔名。舊包hash由本段取代。
+
+367測試及TypeScript、dist已過，最終包重新掃asar無個人資料，隔離打包版Cookie操作與本機匯出再過。源碼僅含程式／測試／文件／版本／授權，二進位只上Release，exass/及所有個人資料不提交。目標origin/master、Release v0.95.0，實際結果以本輪Git／gh工具及後續發佈回執為準；下面待驗／未提交說明屬前階段歷史。不新增產品功能或自動更新。
+
+## 2026-10-30 0.95 安裝包及 Cookies 設定（待人手驗收）
+
+使用者要求打包0.95，並明確選擇加入本機 Cookies 檔選擇／狀態提示。已改 package／lock 0.95.0，新增 core/cookies、main/cookieFile、CookieSettings 可展開入口及 IPC，支援 Netscape 匯入／狀態／確認清程式副本，錯誤／過期／過大檔保留原設定，不動來源檔及真實 Cookies。補第三方 licenses、README及繁中NSIS。45檔367測試、TypeScript、build／dist通過。
+
+成品 release/0.95.0/LyricVideo Setup 0.95.0.exe，122204653 bytes，SHA256 bb863a69e9df48f9a31ad7c04f5f2222c0d2ca85b9ffc08d5a10c05b8dbe28ab（同目錄SHA256SUMS.txt）。未簽署，仍需外部ffmpeg／ffprobe／yt-dlp／JavaScript runtime。靜態確認x64、version0.95.0、三字典／字體／授權齊全、無素材Cookies或tools入包。獨立隱藏打包版以workspace隔離profile＋假Cookie驗實際UI匯入／清除及十秒測試片IPC匯出成功，未安裝、未改真實AppData；產物studio-data/packaged-smoke-0.95.0忽略。測試debugger收尾曾失敗，修腳本後最終包完整成功。
+
+本步未提交／推送，待用家安裝／開打包版驗Cookies入口、本機預覽匯出及重開保存，詳dev-plan最新紀錄；不自行開下一步或帶入工具，exass/不動。上一輪GitHub master已在1f282fa，以下「不打包／不改版本／沒有待驗」屬當時歷史。
+
 ## 2026-10-30 本輪修復同步 GitHub
 
 使用者明確要求「推送 GitHub」。fetch 核對 origin/master 無新增，本機有 5 個已驗收修復提交；本輪同步這 5 個提交及本次文件同步紀錄，目標 origin/master（https://github.com/pxxpkm/lyric-video）。最新產品提交 e8ba941，其餘為 bfada49、231a5d5、a4652dc、344a942。同步結果及最新文件提交 hash 以本輪 git push／git log／branch 狀態為準，不 force push。下方「未 push」屬推送前歷史。

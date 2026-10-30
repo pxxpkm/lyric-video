@@ -8,6 +8,7 @@ import { Preview } from "./Preview";
 import { CacheLibrary } from "./CacheLibrary";
 import { flushActiveSave } from "./projectSaver";
 import { ImportProjectFlow } from "./importProjectFlow";
+import { CookieSettings } from "./CookieSettings";
 
 type Source = { kind: "youtube"; url: string } | { kind: "file"; path: string } | null;
 
@@ -277,6 +278,7 @@ export function App() {
       <h1>歌詞影片</h1>
       <button disabled={busy || jobs.some((job) => job.status === "running" || job.status === "waiting")} onClick={() => setShowCache(true)}>下載素材／清除緩存</button>
       <p className="status">{status}</p>
+      <CookieSettings disabled={busy || jobs.some(job => job.status === "running" || job.status === "waiting")} onBusy={setBusy} />
       {toolActive ? <button disabled={cancelling} onClick={() => {
         setCancelling(true); setStatus("正在停止工具，請稍候…");
         void window.lyric.cancelTool("import").catch(() => { setCancelling(false); setError("未能發出取消，請再試。"); });

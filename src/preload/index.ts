@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 
 contextBridge.exposeInMainWorld("lyric", {
+  cookieStatus: () => ipcRenderer.invoke("cookies:status"),
+  selectCookies: () => ipcRenderer.invoke("cookies:select"),
+  clearCookies: () => ipcRenderer.invoke("cookies:clear"),
   cancelTool: (kind: "import" | "export") => ipcRenderer.invoke("tool:cancel", kind),
   onToolState: (callback: (state: { kind: "import" | "export"; active: boolean }) => void) => {
     const listener = (_event: unknown, state: { kind: "import" | "export"; active: boolean }) => callback(state);

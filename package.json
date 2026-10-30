@@ -1,8 +1,8 @@
 {
   "name": "lyric-video",
-  "version": "0.5.0",
+  "version": "0.95.0",
   "private": true,
-  "description": "把同步歌詞燒進 MP4（beta 0.5）",
+  "description": "把同步歌詞燒進 MP4（0.95）",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -29,6 +29,14 @@
       {
         "from": "fonts",
         "to": "fonts"
+      },
+      {
+        "from": "licenses",
+        "to": "licenses"
+      },
+      {
+        "from": "README.md",
+        "to": "使用說明.md"
       }
     ],
     "win": {
@@ -43,7 +51,9 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerLanguages": ["zh_TW"],
+      "language": "1028"
     }
   },
   "dependencies": {
